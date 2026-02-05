@@ -71,6 +71,7 @@ DECLARE
   v_boundaries RECORD;
   v_total_spent NUMERIC;
   v_now TIMESTAMP WITH TIME ZONE;
+  v_sample_record RECORD; -- Declare a record variable for the loop
 BEGIN
   v_now := NOW();
   
@@ -119,7 +120,7 @@ BEGIN
 
   -- Also log the raw transactions for debugging
   RAISE NOTICE '[get_daily_spent_amount] Sample transactions in range:';
-  FOR record IN 
+  FOR v_sample_record IN 
     SELECT amount, created_at, transaction_type 
     FROM public.budget_transactions 
     WHERE user_id = p_user_id 
@@ -128,7 +129,7 @@ BEGIN
     ORDER BY created_at DESC 
     LIMIT 5
   LOOP
-    RAISE NOTICE '  - Amount: %, Type: %, Created: %', record.amount, record.transaction_type, record.created_at;
+    RAISE NOTICE '  - Amount: %, Type: %, Created: %', v_sample_record.amount, v_sample_record.transaction_type, v_sample_record.created_at;
   END LOOP;
 
   RETURN v_total_spent;
