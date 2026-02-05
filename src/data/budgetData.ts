@@ -22,6 +22,10 @@ export const GENERIC_MODULE_ID = "Z";
 export const GENERIC_CATEGORY_ID = "Z1";
 // -------------------------------
 
+// --- Special Category IDs ---
+export const FUEL_CATEGORY_ID = "G1";
+// ----------------------------
+
 export const initialModules: Module[] = [
   {
     id: "A",
@@ -71,6 +75,15 @@ export const initialModules: Module[] = [
     categories: [
       createCategory("F1", "Shopping/Projects", [10, 10]), // $20.00
       createCategory("F2", "Fun & Recreation", [10]), // $10.00
+    ],
+  },
+  {
+    id: "G",
+    name: "Long-Term Spends",
+    categories: [
+      // Fuel is a manual entry category. We give it a base value for weekly tracking, 
+      // but it will be handled specially during reset.
+      createCategory(FUEL_CATEGORY_ID, "Fuel", [50]), // $50.00 weekly allocation
     ],
   },
 ];

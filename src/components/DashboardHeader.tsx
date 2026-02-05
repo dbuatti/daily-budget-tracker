@@ -14,7 +14,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ totalSpent, gearTrave
   const remainingBudget = WEEKLY_BUDGET_TOTAL - totalSpent;
   const deficit = Math.max(0, -remainingBudget);
   
-  // Calculate progress for the token budget (382.00)
+  // Calculate progress for the token budget (TOTAL_TOKEN_BUDGET is now 350.00)
   const spentPercentage = (totalSpent / TOTAL_TOKEN_BUDGET) * 100;
   const progressValue = Math.min(100, spentPercentage);
 

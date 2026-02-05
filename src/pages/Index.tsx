@@ -4,7 +4,7 @@ import ModuleSection from '@/components/ModuleSection';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
 import MondayBriefingDialog from '@/components/MondayBriefingDialog';
 import { Loader2, Bug, RefreshCw, Terminal } from 'lucide-react';
-import { GENERIC_MODULE_ID } from '@/data/budgetData';
+import { GENERIC_MODULE_ID, TOTAL_TOKEN_BUDGET } from '@/data/budgetData';
 import { formatCurrency } from '@/lib/format';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -166,6 +166,11 @@ const LogTransaction = () => {
 
   // Filter out the hidden generic module from the main display
   const visibleModules = modules.filter(module => module.id !== GENERIC_MODULE_ID);
+  
+  const weeklyTokenBudget = TOTAL_TOKEN_BUDGET;
+  const weeklyProgress = Math.min(100, (totalSpentWeekly / weeklyTokenBudget) * 100);
+  const weeklyRemaining = weeklyTokenBudget - totalSpentWeekly;
+
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
@@ -198,31 +203,31 @@ const LogTransaction = () => {
         <div className="space-y-6">
           <div className="p-6 bg-indigo-100 dark:bg-indigo-900/50 rounded-2xl shadow-xl border-2 border-indigo-300 dark:border-indigo-700 text-center">
             <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">
-              Weekly Total
+              Weekly Token Budget Used
             </p>
             <p className="text-5xl font-extrabold mt-2 text-indigo-900 dark:text-white">
               {formatCurrency(totalSpentWeekly).replace('A$', '$')}
             </p>
             <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-2">
-              out of {formatCurrency(382.00).replace('A$', '$')} token budget
+              out of {formatCurrency(weeklyTokenBudget).replace('A$', '$')} token budget
             </p>
           </div>
 
           {/* Simple weekly progress visualization */}
           <div className="p-4 bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-800">
-            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Weekly Progress</h3>
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Weekly Token Progress</h3>
             <div className="relative pt-1">
               <div className="flex mb-2 items-center justify-between">
                 <span className="text-xs font-semibold inline-block text-indigo-600 dark:text-indigo-400">
-                  {Math.round((totalSpentWeekly / 382.00) * 100)}% Used
+                  {Math.round(weeklyProgress)}% Used
                 </span>
                 <span className="text-xs font-semibold inline-block text-gray-600 dark:text-gray-400">
-                  {formatCurrency(382.00 - totalSpentWeekly).replace('A$', '$')} remaining
+                  {formatCurrency(weeklyRemaining).replace('A$', '$')} remaining
                 </span>
               </div>
               <div className="overflow-hidden h-3 mb-4 text-xs flex rounded bg-gray-200 dark:bg-gray-800">
                 <div 
-                  style={{ width: `${Math.min(100, (totalSpentWeekly / 382.00) * 100)}%` }}
+                  style={{ width: `${weeklyProgress}%` }}
                   className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-indigo-600 dark:bg-indigo-500 transition-all duration-500"
                 ></div>
               </div>

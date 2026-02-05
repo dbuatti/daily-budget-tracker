@@ -6,7 +6,7 @@ import { Module } from '@/types/budget';
 import { WeeklyBudgetState } from '@/types/supabase';
 import { formatCurrency } from '@/lib/format';
 import { toast } from 'sonner';
-import { GENERIC_MODULE_ID, WEEKLY_BUDGET_TOTAL, initialModules } from '@/data/budgetData';
+import { GENERIC_MODULE_ID, WEEKLY_BUDGET_TOTAL, initialModules, FUEL_CATEGORY_ID } from '@/data/budgetData';
 
 const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState> => {
   const { data, error } = await supabase
@@ -106,19 +106,31 @@ const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState> => {
           const category = module.categories.find(c => c.id === category_id);
           if (category) {
             categoryFound = true;
-            // Try to find an unspent token with the same amount
-            const token = category.tokens.find(t => t.value === amount && !t.spent);
-            if (token) {
-              token.spent = true;
+            
+            // Special handling for Fuel: always treat as custom spend, add new token
+            if (category.id === FUEL_CATEGORY_ID) {
+                const newToken = {
+                    id: `custom-${category_id}-${tx.id}`,
+                    value: amount,
+                    spent: true
+                };
+                category.tokens.push(newToken);
+                // Note: We do NOT update category.baseValue here, as baseValue represents the weekly budget.
             } else {
-              // Add a new custom token and mark as spent
-              const newToken = {
-                id: `custom-${category_id}-${tx.id}`,
-                value: amount,
-                spent: true
-              };
-              category.tokens.push(newToken);
-              category.baseValue += amount;
+                // Standard category: Try to find an unspent token with the same amount
+                const token = category.tokens.find(t => t.value === amount && !t.spent);
+                if (token) {
+                    token.spent = true;
+                } else {
+                    // Add a new custom token and mark as spent
+                    const newToken = {
+                        id: `custom-${category_id}-${tx.id}`,
+                        value: amount,
+                        spent: true
+                    };
+                    category.tokens.push(newToken);
+                    category.baseValue += amount;
+                }
             }
             break;
           }
@@ -261,10 +273,14 @@ export const useBudgetState = () => {
   const modules: Module[] = state?.current_tokens || [];
   const gearTravelFund = state?.gear_travel_fund || 0;
 
+  // Calculate total spent for WEEKLY budget (excluding long-term categories like Fuel)
   const totalSpentWeekly = modules.reduce((total, module) => 
-    total + module.categories.reduce((catTotal, category) => 
-      catTotal + category.tokens.filter(t => t.spent).reduce((tokenTotal, token) => tokenTotal + token.value, 0)
-    , 0)
+    total + module.categories.reduce((catTotal, category) => {
+      if (category.id === FUEL_CATEGORY_ID) {
+        return catTotal; // Exclude Fuel spending from weekly total
+      }
+      return catTotal + category.tokens.filter(t => t.spent).reduce((tokenTotal, token) => tokenTotal + token.value, 0)
+    }, 0)
   , 0);
 
   const handleTokenSpend = useCallback(async (categoryId: string, tokenId: string) => {
@@ -275,19 +291,15 @@ export const useBudgetState = () => {
       let tokenFound = false;
       let amount = 0;
 
-      console.log('[useBudgetState] Current modules structure:', JSON.stringify(modules, null, 2));
-
       const updatedModules = modules.map(module => ({
         ...module,
         categories: module.categories.map(category => {
           if (category.id === categoryId) {
             categoryFound = true;
-            console.log('[useBudgetState] Found category:', category.name);
             const updatedTokens = category.tokens.map(token => {
               if (token.id === tokenId) {
                 tokenFound = true;
                 amount = token.value;
-                console.log('[useBudgetState] Found token, value:', token.value, 'spent:', token.spent);
                 return { ...token, spent: true };
               }
               return token;
@@ -303,17 +315,9 @@ export const useBudgetState = () => {
         throw new Error('Category or token not found');
       }
 
-      console.log('[useBudgetState] About to log transaction with amount:', amount);
-      
-      console.log('[useBudgetState] Calling logTransactionMutation.mutateAsync...');
       await logTransactionMutation.mutateAsync({ amount, categoryId, transactionType: 'token_spend' });
-      console.log('[useBudgetState] Transaction logged successfully');
-
-      console.log('[useBudgetState] About to save state with updated modules');
-      
       await saveMutation.mutateAsync({ modules: updatedModules, gearTravelFund });
 
-      console.log('[useBudgetState] State saved successfully');
       toast.success(`Logged ${formatCurrency(amount)}`);
     } catch (error) {
       console.error('[useBudgetState] Error in handleTokenSpend:', error);
@@ -329,6 +333,9 @@ export const useBudgetState = () => {
           if (category.id === categoryId) {
             const customTokenId = `custom-${categoryId}-${Date.now()}-${Math.random()}`;
             const newToken = { id: customTokenId, value: amount, spent: true };
+            
+            // For Fuel, we add the custom spend as a new token to track the 4-week spend.
+            // For other categories, we also add it as a new token (custom spend).
             return { 
               ...category, 
               tokens: [...category.tokens, newToken] 
@@ -369,7 +376,7 @@ export const useBudgetState = () => {
 
   const handleMondayReset = useCallback(async () => {
     try {
-      // Calculate surplus/deficit
+      // 1. Calculate weekly surplus/deficit based on WEEKLY_BUDGET_TOTAL (which excludes Fuel)
       const totalSpent = totalSpentWeekly;
       const totalBudget = WEEKLY_BUDGET_TOTAL;
       const difference = totalBudget - totalSpent;
@@ -377,47 +384,80 @@ export const useBudgetState = () => {
       let newFund = gearTravelFund;
       let categoryBriefings: Array<{ categoryName: string; difference: number; newBaseValue?: number }> = [];
 
+      // Deep clone modules for modification
+      let modulesToSave = JSON.parse(JSON.stringify(modules));
+      
+      // Find initial Fuel base value for reset
+      const initialFuelCategory = initialModules.find(m => m.id === 'G')?.categories.find(c => c.id === FUEL_CATEGORY_ID);
+      const initialFuelBaseValue = initialFuelCategory?.baseValue || 50;
+
       if (difference > 0) {
         // Surplus - add to fund
         newFund += difference;
       } else {
-        // Deficit - reduce category budgets proportionally
+        // Deficit - reduce category budgets proportionally (excluding Fuel and Generic)
         const deficit = Math.abs(difference);
-        const totalBaseValue = modules.reduce((sum, module) => 
+        
+        // Calculate total base value of *weekly* categories only (A-F)
+        const weeklyModules = initialModules.filter(m => m.id !== GENERIC_MODULE_ID && m.id !== 'G');
+        const totalWeeklyBaseValue = weeklyModules.reduce((sum, module) => 
           sum + module.categories.reduce((catSum, cat) => catSum + cat.baseValue, 0)
         , 0);
         
-        const deficitRatio = deficit / totalBaseValue;
-        
-        const adjustedModules = modules.map(module => ({
-          ...module,
-          categories: module.categories.map(category => {
-            const adjustment = Math.round(category.baseValue * deficitRatio * 100) / 100;
-            const newBaseValue = category.baseValue - adjustment;
-            categoryBriefings.push({
-              categoryName: category.name,
-              difference: -adjustment,
-              newBaseValue: newBaseValue
-            });
-            return {
-              ...category,
-              baseValue: newBaseValue,
-              tokens: category.tokens.map(token => ({ ...token, spent: false }))
-            };
-          })
-        }));
-
-        // Save adjusted modules
-        await saveMutation.mutateAsync({ modules: adjustedModules, gearTravelFund });
+        if (totalWeeklyBaseValue > 0) {
+            const deficitRatio = deficit / totalWeeklyBaseValue;
+            
+            modulesToSave = modulesToSave.map(module => ({
+              ...module,
+              categories: module.categories.map(category => {
+                if (category.id !== FUEL_CATEGORY_ID && category.id !== GENERIC_CATEGORY_ID) {
+                    // Apply proportional deficit reduction to weekly categories
+                    const adjustment = Math.round(category.baseValue * deficitRatio * 100) / 100;
+                    const newBaseValue = Math.max(0, category.baseValue - adjustment);
+                    
+                    categoryBriefings.push({
+                      categoryName: category.name,
+                      difference: -adjustment,
+                      newBaseValue: newBaseValue
+                    });
+                    
+                    return {
+                      ...category,
+                      baseValue: newBaseValue,
+                      tokens: category.tokens.map(token => ({ ...token, spent: false })) // Reset tokens
+                    };
+                }
+                return category;
+              })
+            }));
+        }
       }
 
-      // Reset all tokens to unspent
-      const resetModules = modules.map(module => ({
+      // 2. Reset tokens for weekly categories and reset Fuel baseValue
+      const resetModules = modulesToSave.map(module => ({
         ...module,
-        categories: module.categories.map(category => ({
-          ...category,
-          tokens: category.tokens.map(token => ({ ...token, spent: false }))
-        }))
+        categories: module.categories.map(category => {
+          if (category.id === FUEL_CATEGORY_ID) {
+            // Fuel: Reset baseValue to initial weekly allocation ($50)
+            // DO NOT reset spent tokens (they track the 4-week spend)
+            return {
+              ...category,
+              baseValue: initialFuelBaseValue, 
+              // Tokens remain as they are (spent status preserved)
+            };
+          }
+          
+          if (category.id !== GENERIC_CATEGORY_ID) {
+            // Standard weekly category reset: reset tokens to unspent
+            return {
+              ...category,
+              tokens: category.tokens.map(token => ({ ...token, spent: false }))
+            };
+          }
+          
+          // Generic category: tokens remain spent, baseValue remains accumulated
+          return category;
+        })
       }));
 
       await saveMutation.mutateAsync({ modules: resetModules, gearTravelFund: newFund });
@@ -474,7 +514,7 @@ export const useBudgetState = () => {
   return {
     modules,
     gearTravelFund,
-    totalSpent: totalSpentWeekly,
+    totalSpent: totalSpentWeekly, // This is now the weekly total (excluding Fuel)
     spentToday: spentToday || 0,
     isLoading,
     isError,

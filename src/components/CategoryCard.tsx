@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/format';
 import AddTokenDialog from './AddTokenDialog';
 import { useBudgetState } from '@/hooks/useBudgetState';
+import { FUEL_CATEGORY_ID } from '@/data/budgetData';
 
 interface CategoryCardProps {
   category: Category;
@@ -16,17 +17,23 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) =
   
   // 1. The initial budget is now stored directly in baseValue
   // If baseValue is missing (old data), calculate it from tokens as fallback
-  const initialBudget = category.baseValue || category.tokens.reduce((sum, token) => sum + token.value, 0);
+  const initialWeeklyBudget = category.baseValue || category.tokens.reduce((sum, token) => sum + token.value, 0);
 
   // 2. Calculate the total amount spent in this category (predefined tokens + custom spends)
   const totalSpentInThisCategory = category.tokens
     .filter(t => t.spent)
     .reduce((sum, token) => sum + token.value, 0);
 
-  // 3. Calculate the current status (Remaining = Initial Budget - Total Spent)
-  // Note: This calculation correctly reflects the budget status against the base value, 
-  // even if custom spends push the total spent above the base value.
-  const currentStatus = initialBudget - totalSpentInThisCategory;
+  let displayBudget = initialWeeklyBudget;
+  let currentStatus = initialWeeklyBudget - totalSpentInThisCategory;
+  let statusLabel = "Initial Budget";
+
+  if (category.id === FUEL_CATEGORY_ID) {
+    // Special 4-week tracking logic for Fuel
+    displayBudget = initialWeeklyBudget * 4; // 4 weeks * $50 = $200
+    currentStatus = displayBudget - totalSpentInThisCategory;
+    statusLabel = "4-Week Budget";
+  }
 
   return (
     <Card className="rounded-2xl shadow-xl border-2 border-indigo-200 dark:border-indigo-800/70 transition-all hover:shadow-2xl bg-white dark:bg-gray-900/50">
@@ -40,7 +47,7 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) =
           </span>
         </CardTitle>
         <p className="text-xs text-gray-500 dark:text-gray-400">
-            Initial Budget: {formatCurrency(initialBudget)}
+            {statusLabel}: {formatCurrency(displayBudget)}
         </p>
       </CardHeader>
       <CardContent className="flex flex-wrap gap-4 p-4 justify-start">
