@@ -28,6 +28,24 @@ interface ResetBriefing {
 }
 // ----------------------
 
+// Helper to deeply parse token values from JSONB structure retrieved from Supabase
+const parseModules = (modulesData: any): Module[] => {
+    if (!Array.isArray(modulesData)) return initialModules;
+
+    return modulesData.map((module: any) => ({
+        ...module,
+        categories: module.categories.map((category: any) => ({
+            ...category,
+            baseValue: parseFloat(category.baseValue) || 0, // Ensure baseValue is a number
+            tokens: category.tokens.map((token: any) => ({
+                ...token,
+                value: parseFloat(token.value) || 0, // Ensure token value is a number
+            })),
+        })),
+    }));
+};
+
+
 // Helper to determine if a weekly reset is due (assuming week starts on Monday)
 const isResetDue = (lastResetDate: string): boolean => {
   const lastReset = new Date(lastResetDate);
@@ -56,7 +74,7 @@ const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState | nul
   if (data) {
     return {
       ...data,
-      current_tokens: data.current_tokens as Module[],
+      current_tokens: parseModules(data.current_tokens), // Use parser here
       gear_travel_fund: parseFloat(data.gear_travel_fund as string),
     } as WeeklyBudgetState;
   }
