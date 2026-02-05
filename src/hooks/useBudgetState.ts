@@ -4,11 +4,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useSession } from '@/contexts/SessionContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Module, Category, Token } from '@/types/budget';
+import { Module } from '@/types/budget';
 import { formatCurrency } from '@/lib/format';
 import { WEEKLY_BUDGET_TOTAL, initialModules } from '@/data/budgetData';
 import { toast } from 'sonner';
-import { differenceInHours, startOfHour, format as formatDate } from 'date-fns';
+import { format as formatDate } from 'date-fns';
 import { useUserProfile } from './useUserProfile';
 
 // Types
