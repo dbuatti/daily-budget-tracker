@@ -2,6 +2,7 @@ import React from 'react';
 import { useBudgetState } from '@/hooks/useBudgetState';
 import DashboardHeader from './DashboardHeader';
 import ModuleSection from './ModuleSection';
+import FundResetButton from './FundResetButton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
@@ -62,7 +63,8 @@ const WeeklyDashboard: React.FC = () => {
         gearTravelFund={gearTravelFund} 
       />
 
-      <div className="flex justify-end mb-6">
+      <div className="flex justify-end items-center space-x-4 mb-6">
+        <FundResetButton />
         <Button 
           onClick={handleMondayReset} 
           className="bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg transition-transform active:scale-[0.98] font-semibold"

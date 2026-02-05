@@ -201,6 +201,18 @@ export const useBudgetState = () => {
     });
   }, [totalSpent, gearTravelFund, userId, saveMutation]);
 
+  const handleFundAdjustment = useCallback((newFundValue: number) => {
+    if (!userId) return;
+
+    setGearTravelFund(newFundValue);
+    showSuccess(`Gear/Travel Fund manually set to ${formatCurrency(newFundValue)}.`);
+
+    saveMutation.mutate({
+      user_id: userId,
+      gear_travel_fund: newFundValue,
+    });
+  }, [userId, saveMutation]);
+
   return {
     modules,
     gearTravelFund,
@@ -209,5 +221,6 @@ export const useBudgetState = () => {
     isError,
     handleTokenSpend,
     handleMondayReset,
+    handleFundAdjustment,
   };
 };
