@@ -20,30 +20,148 @@ const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState> => {
   }
   
   if (data) {
-    // Check if current_tokens is empty or missing
     const state = data as WeeklyBudgetState;
     if (!state.current_tokens || state.current_tokens.length === 0) {
-      console.log('[fetchBudgetState] Found empty state, returning initialModules instead');
-      // Return initial state with proper modules
-      return {
-        user_id: userId,
-        current_tokens: initialModules,
-        gear_travel_fund: 0,
-        last_reset_date: new Date().toISOString().split('T')[0],
-        updated_at: new Date().toISOString()
-      };
+      console.log('[fetchBudgetState] Found empty state, initializing from transactions...');
+      try {
+        const initializedState = await initializeStateFromTransactions(userId);
+        return initializedState;
+      } catch (err) {
+        console.error('Failed to initialize from transactions:', err);
+        // Fall back to initialModules
+        return {
+          user_id: userId,
+          current_tokens: initialModules,
+          gear_travel_fund: 0,
+          last_reset_date: new Date().toISOString().split('T')[0],
+          updated_at: new Date().toISOString()
+        };
+      }
     }
     return state;
   }
   
-  // Return initial state if no record exists
-  return {
-    user_id: userId,
-    current_tokens: initialModules,
-    gear_travel_fund: 0,
-    last_reset_date: new Date().toISOString().split('T')[0],
-    updated_at: new Date().toISOString()
-  };
+  console.log('[fetchBudgetState] No state found, initializing from transactions...');
+  try {
+    const initializedState = await initializeStateFromTransactions(userId);
+    return initializedState;
+  } catch (err) {
+    console.error('Failed to initialize from transactions:', err);
+    return {
+      user_id: userId,
+      current_tokens: initialModules,
+      gear_travel_fund: 0,
+      last_reset_date: new Date().toISOString().split('T')[0],
+      updated_at: new Date().toISOString()
+    };
+  }
+
+  async function initializeStateFromTransactions(userId: string): Promise<WeeklyBudgetState> {
+    // Fetch all transactions for the user (limit to 1000 for safety)
+    const { data: transactions, error: txError } = await supabase
+      .from('budget_transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+      .limit(1000);
+
+    if (txError) {
+      console.error('Error fetching transactions for initialization:', txError);
+      throw txError;
+    }
+
+    // Deep clone initialModules to avoid mutating the constant
+    const modules = JSON.parse(JSON.stringify(initialModules));
+
+    // Process each transaction
+    for (const tx of transactions || []) {
+      const { amount, category_id, transaction_type } = tx;
+      
+      if (transaction_type === 'generic_spend') {
+        // Find or create generic module
+        let genericModule = modules.find(m => m.id === GENERIC_MODULE_ID);
+        if (!genericModule) {
+          genericModule = {
+            id: GENERIC_MODULE_ID,
+            name: 'Generic Spends',
+            categories: [{
+              id: GENERIC_CATEGORY_ID,
+              name: 'Uncategorized',
+              tokens: [],
+              baseValue: 0
+            }]
+          };
+          modules.push(genericModule);
+        }
+        const genericCategory = genericModule.categories[0];
+        genericCategory.tokens.push({
+          id: `generic-${tx.id}`,
+          value: amount,
+          spent: true
+        });
+        genericCategory.baseValue += amount;
+      } else if (category_id) {
+        let categoryFound = false;
+        for (const module of modules) {
+          const category = module.categories.find(c => c.id === category_id);
+          if (category) {
+            categoryFound = true;
+            // Try to find an unspent token with the same amount
+            const token = category.tokens.find(t => t.value === amount && !t.spent);
+            if (token) {
+              token.spent = true;
+            } else {
+              // Add a new custom token and mark as spent
+              const newToken = {
+                id: `custom-${category_id}-${tx.id}`,
+                value: amount,
+                spent: true
+              };
+              category.tokens.push(newToken);
+              category.baseValue += amount;
+            }
+            break;
+          }
+        }
+        if (!categoryFound) {
+          // Category not found, add to generic
+          let genericModule = modules.find(m => m.id === GENERIC_MODULE_ID);
+          if (!genericModule) {
+            genericModule = {
+              id: GENERIC_MODULE_ID,
+              name: 'Generic Spends',
+              categories: [{
+                id: GENERIC_CATEGORY_ID,
+                name: 'Uncategorized',
+                tokens: [],
+                baseValue: 0
+              }]
+            };
+            modules.push(genericModule);
+          }
+          const genericCategory = genericModule.categories[0];
+          genericCategory.tokens.push({
+            id: `generic-${tx.id}`,
+            value: amount,
+            spent: true
+          });
+          genericCategory.baseValue += amount;
+        }
+      }
+      // else: token_spend without category_id? ignore
+    }
+
+    // Save the initialized state
+    await saveBudgetState(userId, modules, 0);
+
+    return {
+      user_id: userId,
+      current_tokens: modules,
+      gear_travel_fund: 0,
+      last_reset_date: new Date().toISOString().split('T')[0],
+      updated_at: new Date().toISOString()
+    };
+  }
 };
 
 const fetchSpentToday = async (userId: string): Promise<number> => {
@@ -54,6 +172,7 @@ const fetchSpentToday = async (userId: string): Promise<number> => {
     throw new Error(error.message);
   }
   
+  console.log('fetchSpentToday result:', data);
   return data || 0;
 };
 
@@ -115,6 +234,12 @@ export const useBudgetState = () => {
     queryKey: ['spentToday', userId],
     queryFn: () => fetchSpentToday(userId!),
     enabled: !!userId,
+    onSuccess: (data) => {
+      console.log('spentToday query success:', data);
+    },
+    onError: (error) => {
+      console.error('spentToday query error:', error);
+    }
   });
 
   const logTransactionMutation = useMutation({
