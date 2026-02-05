@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useSession } from '@/contexts/SessionContext';
-import { initialModules, WEEKLY_BUDGET_TOTAL } from '@/data/budgetData';
+import { initialModules, WEEKLY_BUDGET_TOTAL, TOTAL_TOKEN_BUDGET } from '@/data/budgetData';
 import { Module } from '@/types/budget';
 import { WeeklyBudgetState } from '@/types/supabase';
 import { showSuccess, showError } from '@/utils/toast';
@@ -170,20 +170,21 @@ export const useBudgetState = () => {
   const handleMondayReset = useCallback(() => {
     if (!userId) return;
 
-    const remainingBudget = WEEKLY_BUDGET_TOTAL - totalSpent;
+    // Calculate remaining budget based on the ACTIVE TOKEN BUDGET, not the total weekly budget.
+    const remainingActiveBudget = TOTAL_TOKEN_BUDGET - totalSpent;
     
     let newGearTravelFund = gearTravelFund;
 
-    if (remainingBudget > 0) {
-      const surplus = remainingBudget;
+    if (remainingActiveBudget > 0) {
+      const surplus = remainingActiveBudget;
       newGearTravelFund += surplus;
       showSuccess(`Weekly surplus of ${formatCurrency(surplus)} swept to Gear/Travel Fund!`);
-    } else if (remainingBudget < 0) {
-      const deficit = Math.abs(remainingBudget);
-      showError(`Overspent by ${formatCurrency(deficit)}. This deficit would be subtracted from next week's budget.`);
+    } else if (remainingActiveBudget < 0) {
+      const deficit = Math.abs(remainingActiveBudget);
+      showError(`Overspent active budget by ${formatCurrency(deficit)}. This deficit would be subtracted from next week's budget.`);
       // NOTE: For V1, we don't implement deficit subtraction logic, just the notification.
     } else {
-        showSuccess("Budget perfectly balanced. No surplus or deficit.");
+        showSuccess("Active budget perfectly balanced. No surplus or deficit.");
     }
 
     // Reset tokens to initial state
