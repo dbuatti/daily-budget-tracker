@@ -19,20 +19,17 @@ const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState> => {
     throw new Error(error.message);
   }
 
+  // Prepare the default modules with base values
+  const modulesWithBaseValues = initialModules.map(module => ({
+    ...module,
+    categories: module.categories.map(category => ({
+      ...category,
+      baseValue: category.tokens.reduce((sum, token) => sum + token.value, 0)
+    }))
+  }));
+
   if (!data) {
-    // Initialize from initialModules
-    const modulesWithBaseValues = initialModules.map(module => ({
-      ...module,
-      categories: module.categories.map(category => ({
-        ...category,
-        baseValue: category.tokens.reduce((sum, token) => sum + token.value, 0)
-      }))
-    }));
-
-    const totalTokens = modulesWithBaseValues.reduce((sum, module) => 
-      sum + module.categories.reduce((catSum, cat) => catSum + cat.baseValue, 0), 0
-    );
-
+    // No row exists, insert new
     const newState: WeeklyBudgetState = {
       user_id: userId,
       current_tokens: modulesWithBaseValues,
@@ -41,7 +38,6 @@ const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState> => {
       updated_at: new Date().toISOString()
     };
 
-    // Insert the new state
     const { error: insertError } = await supabase
       .from('weekly_budget_state')
       .insert(newState);
@@ -51,6 +47,33 @@ const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState> => {
     }
 
     return newState;
+  }
+
+  // Check if current_tokens is missing, null, undefined, or empty array
+  const currentTokens = data.current_tokens;
+  const needsRepair = !currentTokens || 
+                     !Array.isArray(currentTokens) || 
+                     currentTokens.length === 0;
+
+  if (needsRepair) {
+    // Row exists but current_tokens is empty or invalid, update it
+    const { error: updateError } = await supabase
+      .from('weekly_budget_state')
+      .update({
+        current_tokens: modulesWithBaseValues,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId);
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+
+    return {
+      ...data,
+      current_tokens: modulesWithBaseValues,
+      updated_at: new Date().toISOString()
+    };
   }
 
   return data as WeeklyBudgetState;
