@@ -15,7 +15,8 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) =
   const { handleCustomSpend } = useBudgetState();
   
   // 1. The initial budget is now stored directly in baseValue
-  const initialBudget = category.baseValue;
+  // If baseValue is missing (old data), calculate it from tokens as fallback
+  const initialBudget = category.baseValue || category.tokens.reduce((sum, token) => sum + token.value, 0);
 
   // 2. Calculate the total amount spent in this category (predefined tokens + custom spends)
   const totalSpentInThisCategory = category.tokens
