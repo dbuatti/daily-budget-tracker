@@ -3,7 +3,6 @@ import { useBudgetState } from '@/hooks/useBudgetState';
 import ModuleSection from '@/components/ModuleSection';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
 import { Loader2 } from 'lucide-react';
-import { MadeWithDyad } from '@/components/made-with-dyad';
 import { GENERIC_MODULE_ID } from '@/data/budgetData';
 
 const LogTransaction = () => {
@@ -36,9 +35,6 @@ const LogTransaction = () => {
             onTokenSpend={handleTokenSpend}
           />
         ))}
-      </div>
-      <div className="mt-12">
-        <MadeWithDyad />
       </div>
     </div>
   );
