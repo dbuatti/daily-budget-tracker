@@ -28,6 +28,8 @@ const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState | nul
     .single();
 
   if (error && error.code !== 'PGRST116') { // PGRST116 means "No rows found"
+    // If we get an error other than "No rows found", we throw it.
+    // This includes the 404 error if the table is not exposed.
     throw new Error(error.message);
   }
   
@@ -62,6 +64,13 @@ export const useBudgetState = () => {
     queryKey: [TABLE_NAME, userId],
     queryFn: () => fetchBudgetState(userId!),
     enabled: !!userId,
+    // Prevent retries on 404 errors which indicate missing table/endpoint
+    retry: (failureCount, error) => {
+      // Check if error message indicates a 404 or missing table (Supabase error messages can be vague)
+      // We will allow retries up to 3 times unless it's a persistent error.
+      if (failureCount >= 3) return false;
+      return true;
+    }
   });
 
   // Local state management
@@ -82,16 +91,26 @@ export const useBudgetState = () => {
 
   // Initialize state from DB or defaults
   useEffect(() => {
-    if (dbState && !isInitialized) {
+    // Only proceed if not loading and we have a user ID
+    if (isLoading || !userId || isInitialized) return;
+
+    if (isError) {
+      // If there was an error fetching (e.g., 404 because table is not exposed yet), 
+      // we initialize locally but DO NOT attempt to save, preventing repeated 404 POST requests.
+      setModules(initialModules);
+      setGearTravelFund(0);
+      setIsInitialized(true);
+      showError("Could not connect to budget database. Functionality may be limited.");
+      return;
+    }
+
+    if (dbState) {
+      // Load state from DB
       setGearTravelFund(dbState.gear_travel_fund);
-      
-      // Check if a reset is needed (e.g., if it's a new week/day)
-      // For this demo, we simulate the Monday reset only when the user clicks the button,
-      // but we load the saved token state.
       setModules(dbState.current_tokens);
       setIsInitialized(true);
-    } else if (!dbState && !isLoading && userId && !isInitialized) {
-      // If no state exists, initialize with defaults and save
+    } else {
+      // If no state exists (PGRST116), initialize with defaults and save
       setModules(initialModules);
       setGearTravelFund(0);
       setIsInitialized(true);
@@ -102,7 +121,7 @@ export const useBudgetState = () => {
         last_reset_date: new Date().toISOString().split('T')[0],
       });
     }
-  }, [dbState, isLoading, userId, isInitialized, saveMutation]);
+  }, [dbState, isLoading, userId, isInitialized, isError, saveMutation]);
 
   const totalSpent = useMemo(() => {
     return modules.reduce((moduleAcc, module) => {

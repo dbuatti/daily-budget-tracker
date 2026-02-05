@@ -4,7 +4,7 @@ import DashboardHeader from './DashboardHeader';
 import CategoryCard from './CategoryCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Loader2 } from 'lucide-react';
+import { RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
 
 const WeeklyDashboard: React.FC = () => {
   const { 
@@ -12,6 +12,7 @@ const WeeklyDashboard: React.FC = () => {
     gearTravelFund, 
     totalSpent, 
     isLoading, 
+    isError, // Destructure isError
     handleTokenSpend, 
     handleMondayReset 
   } = useBudgetState();
@@ -20,6 +21,32 @@ const WeeklyDashboard: React.FC = () => {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+      </div>
+    );
+  }
+  
+  if (isError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <Card className="w-full max-w-md rounded-2xl shadow-xl border-red-400 dark:border-red-700">
+          <CardHeader className="text-center">
+            <AlertTriangle className="h-10 w-10 text-red-600 mx-auto mb-2" />
+            <CardTitle className="text-xl font-bold text-red-600 dark:text-red-400">
+              Database Connection Error
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-center text-gray-600 dark:text-gray-400">
+            <p className="mb-4">
+              We couldn't load your budget data. This might be a temporary issue with the database API.
+            </p>
+            <Button 
+              onClick={() => window.location.reload()} 
+              className="bg-red-600 hover:bg-red-700 text-white rounded-xl"
+            >
+              Try Reloading
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
