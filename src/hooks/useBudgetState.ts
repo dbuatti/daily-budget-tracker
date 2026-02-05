@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useSession } from '@/contexts/SessionContext';
 import { Module, Category, Token } from '@/types/budget';
@@ -107,68 +107,6 @@ const fetchSpentToday = async (userId: string): Promise<number> => {
   }
 };
 
-// Save mutation
-const useSaveState = () => {
-  const queryClient = useQueryClient();
-  const { user } = useSession();
-
-  return useCallback(async (modules: Module[], gearTravelFund: number) => {
-    if (!user) throw new Error('User not authenticated');
-
-    const { error } = await supabase
-      .from(WEEKLY_STATE_TABLE)
-      .upsert({
-        user_id: user.id,
-        current_tokens: modules,
-        gear_travel_fund: gearTravelFund,
-        last_reset_date: new Date().toISOString().split('T')[0],
-        updated_at: new Date().toISOString(),
-      });
-
-    if (error) {
-      console.error('[useBudgetState] Error saving state:', error);
-      throw error;
-    }
-
-    // Invalidate queries to refetch
-    await queryClient.invalidateQueries({ queryKey: [WEEKLY_STATE_TABLE, user.id] });
-    await queryClient.invalidateQueries({ queryKey: ['spentToday', user.id] });
-  }, [user, queryClient]);
-};
-
-// Log transaction mutation
-const useLogTransaction = () => {
-  const queryClient = useQueryClient();
-  const { user } = useSession();
-
-  return useCallback(async (
-    amount: number,
-    categoryId: string,
-    transactionType: 'token_spend' | 'custom_spend' | 'generic_spend'
-  ) => {
-    if (!user) throw new Error('User not authenticated');
-
-    console.log('[useBudgetState] Logging transaction:', { amount, categoryId, transactionType });
-
-    const { error } = await supabase
-      .from(BUDGET_TRANSACTIONS_TABLE)
-      .insert({
-        user_id: user.id,
-        amount,
-        category_id: categoryId,
-        transaction_type: transactionType,
-      });
-
-    if (error) {
-      console.error('[useBudgetState] Error logging transaction:', error);
-      throw error;
-    }
-
-    // Invalidate spentToday query to refetch
-    await queryClient.invalidateQueries({ queryKey: ['spentToday', user.id] });
-  }, [user, queryClient]);
-};
-
 export const useBudgetState = () => {
   const { user } = useSession();
   const userId = user?.id;
@@ -212,12 +150,65 @@ export const useBudgetState = () => {
     }, 0);
   }, 0);
 
-  // Mutations
-  const saveMutation = useSaveState();
-  const logTransactionMutation = useLogTransaction();
+  // Save mutation
+  const saveMutation = useMutation({
+    mutationFn: async ({ modules, gearTravelFund }: { modules: Module[]; gearTravelFund: number }) => {
+      if (!user) throw new Error('User not authenticated');
 
-  // Calculate total spent today from spentToday RPC
-  // Note: spentToday already comes from the RPC, we just pass it through
+      const { error } = await supabase
+        .from(WEEKLY_STATE_TABLE)
+        .upsert({
+          user_id: user.id,
+          current_tokens: modules,
+          gear_travel_fund: gearTravelFund,
+          last_reset_date: new Date().toISOString().split('T')[0],
+          updated_at: new Date().toISOString(),
+        });
+
+      if (error) {
+        console.error('[useBudgetState] Error saving state:', error);
+        throw error;
+      }
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: [WEEKLY_STATE_TABLE, userId] });
+      await queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
+    },
+  });
+
+  // Log transaction mutation
+  const logTransactionMutation = useMutation({
+    mutationFn: async ({
+      amount,
+      categoryId,
+      transactionType,
+    }: {
+      amount: number;
+      categoryId: string;
+      transactionType: 'token_spend' | 'custom_spend' | 'generic_spend';
+    }) => {
+      if (!user) throw new Error('User not authenticated');
+
+      console.log('[useBudgetState] Logging transaction:', { amount, categoryId, transactionType });
+
+      const { error } = await supabase
+        .from(BUDGET_TRANSACTIONS_TABLE)
+        .insert({
+          user_id: user.id,
+          amount,
+          category_id: categoryId,
+          transaction_type: transactionType,
+        });
+
+      if (error) {
+        console.error('[useBudgetState] Error logging transaction:', error);
+        throw error;
+      }
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
+    },
+  });
 
   // Briefing state
   const [briefing, setBriefing] = useState<{
@@ -265,10 +256,10 @@ export const useBudgetState = () => {
       }
 
       // Log the transaction
-      await logTransactionMutation.mutateAsync(amount, categoryId, 'token_spend');
+      await logTransactionMutation.mutateAsync({ amount, categoryId, transactionType: 'token_spend' });
 
       // Save updated state
-      await saveMutation.mutateAsync(updatedModules, gearTravelFund);
+      await saveMutation.mutateAsync({ modules: updatedModules, gearTravelFund });
 
       toast.success(`Logged ${formatCurrency(amount)}`);
     } catch (error) {
@@ -280,7 +271,7 @@ export const useBudgetState = () => {
   // Handle generic spend (from QuickSpendButtons)
   const handleGenericSpend = useCallback(async (amount: number) => {
     try {
-      await logTransactionMutation.mutateAsync(amount, GENERIC_CATEGORY_ID, 'generic_spend');
+      await logTransactionMutation.mutateAsync({ amount, categoryId: GENERIC_CATEGORY_ID, transactionType: 'generic_spend' });
       toast.success(`Logged generic spend of ${formatCurrency(amount)}`);
     } catch (error) {
       console.error('Error logging generic spend:', error);
@@ -291,7 +282,7 @@ export const useBudgetState = () => {
   // Handle custom spend (from AddTokenDialog)
   const handleCustomSpend = useCallback(async (categoryId: string, amount: number) => {
     try {
-      await logTransactionMutation.mutateAsync(amount, categoryId, 'custom_spend');
+      await logTransactionMutation.mutateAsync({ amount, categoryId, transactionType: 'custom_spend' });
       toast.success(`Logged custom spend of ${formatCurrency(amount)} in category`);
     } catch (error) {
       console.error('Error logging custom spend:', error);
@@ -361,7 +352,7 @@ export const useBudgetState = () => {
       const updatedModules = mapToModules(categoryMap, initialModules);
 
       // Save the reset state
-      await saveMutation.mutateAsync(updatedModules, newGearTravelFund);
+      await saveMutation.mutateAsync({ modules: updatedModules, gearTravelFund: newGearTravelFund });
 
       // Set briefing data for dialog
       setBriefing({
@@ -383,13 +374,13 @@ export const useBudgetState = () => {
   // Handle fund adjustment (for debugging)
   const handleFundAdjustment = useCallback(async (newFund: number) => {
     try {
-      await saveMutation.mutateAsync(modules, newFund);
+      await saveMutation.mutateAsync({ modules, gearTravelFund: newFund });
       toast.success(`Fund adjusted to ${formatCurrency(newFund)}`);
     } catch (error) {
       console.error('Error adjusting fund:', error);
       toast.error('Failed to adjust fund');
     }
-  }, [modules, saveMutation]);
+  }, [modules, gearTravelFund, saveMutation]);
 
   // Handle full reset (for debugging)
   const handleFullReset = useCallback(async () => {
@@ -403,7 +394,7 @@ export const useBudgetState = () => {
         })),
       }));
 
-      await saveMutation.mutateAsync(resetModules, 0);
+      await saveMutation.mutateAsync({ modules: resetModules, gearTravelFund: 0 });
       toast.success('Full budget reset completed');
     } catch (error) {
       console.error('Error performing full reset:', error);
