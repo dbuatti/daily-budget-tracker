@@ -1,9 +1,23 @@
-// ... (existing imports remain the same)
+import React from 'react';
+import { useBudgetState } from '@/hooks/useBudgetState';
+import { formatCurrency } from '@/lib/format';
+import QuickSpendButtons from '@/components/QuickSpendButtons';
+import ModuleSection from '@/components/ModuleSection';
+import MondayBriefingDialog from '@/components/MondayBriefingDialog';
+import { Card, CardHeader, CardTitle, CardContent, Button } from '@/components/ui/card';
+import RLSDebugPanel from '@/components/RLSDebugPanel';
 
 const LogTransaction = () => {
   const { modules, gearTravelFund, totalSpent, isLoading, handleTokenSpend, resetBriefing, clearBriefing, spentToday, isLoading: isStateLoading, state } = useBudgetState();
   
-  // ... (rest of the existing code remains the same until the return)
+  // Filter modules to only show those with categories that have tokens
+  const visibleModules = modules.filter(module => 
+    module.categories.some(category => category.tokens.length > 0)
+  );
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>;
+  }
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
@@ -97,3 +111,5 @@ const LogTransaction = () => {
     </div>
   );
 };
+
+export default LogTransaction;
