@@ -1,7 +1,7 @@
 import React from 'react';
 import { useBudgetState } from '@/hooks/useBudgetState';
 import DashboardHeader from './DashboardHeader';
-import CategoryCard from './CategoryCard';
+import ModuleSection from './ModuleSection';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
@@ -72,26 +72,13 @@ const WeeklyDashboard: React.FC = () => {
         </Button>
       </div>
 
-      <div className="space-y-10">
+      <div className="space-y-8">
         {modules.map((module) => (
-          <Card key={module.id} className="rounded-3xl p-6 shadow-3xl border-4 border-indigo-300/50 dark:border-indigo-800/50 bg-white dark:bg-gray-950/70">
-            <CardHeader className="p-0 mb-6">
-              <CardTitle className="text-3xl font-extrabold text-indigo-700 dark:text-indigo-300 border-b-4 pb-3 border-indigo-200 dark:border-indigo-800">
-                Module {module.id}: {module.name}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0 space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {module.categories.map((category) => (
-                  <CategoryCard
-                    key={category.id}
-                    category={category}
-                    onTokenSpend={handleTokenSpend}
-                  />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <ModuleSection
+            key={module.id}
+            module={module}
+            onTokenSpend={handleTokenSpend}
+          />
         ))}
       </div>
     </div>
