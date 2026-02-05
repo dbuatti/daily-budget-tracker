@@ -12,7 +12,7 @@ const WeeklyDashboard: React.FC = () => {
     gearTravelFund, 
     totalSpent, 
     isLoading, 
-    isError, // Destructure isError
+    isError,
     handleTokenSpend, 
     handleMondayReset 
   } = useBudgetState();
@@ -65,7 +65,7 @@ const WeeklyDashboard: React.FC = () => {
       <div className="flex justify-end mb-6">
         <Button 
           onClick={handleMondayReset} 
-          className="bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-md transition-transform active:scale-[0.98]"
+          className="bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg transition-transform active:scale-[0.98] font-semibold"
         >
           <RefreshCw className="w-4 h-4 mr-2" />
           Simulate Monday Reset
@@ -74,9 +74,9 @@ const WeeklyDashboard: React.FC = () => {
 
       <div className="space-y-10">
         {modules.map((module) => (
-          <Card key={module.id} className="rounded-3xl p-6 shadow-2xl border-4 border-indigo-50 dark:border-indigo-900/30">
+          <Card key={module.id} className="rounded-3xl p-6 shadow-3xl border-4 border-indigo-300/50 dark:border-indigo-800/50 bg-white dark:bg-gray-950/70">
             <CardHeader className="p-0 mb-6">
-              <CardTitle className="text-2xl font-bold text-indigo-700 dark:text-indigo-300 border-b pb-2 border-indigo-100 dark:border-indigo-900">
+              <CardTitle className="text-3xl font-extrabold text-indigo-700 dark:text-indigo-300 border-b-4 pb-3 border-indigo-200 dark:border-indigo-800">
                 Module {module.id}: {module.name}
               </CardTitle>
             </CardHeader>

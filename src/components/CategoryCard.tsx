@@ -15,16 +15,19 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) =
   const remainingAmount = totalCategoryBudget - spentAmount;
 
   return (
-    <Card className="rounded-2xl shadow-xl border-indigo-100 dark:border-indigo-900/50 transition-all hover:shadow-2xl">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg font-extrabold text-indigo-800 dark:text-indigo-300 flex justify-between items-center">
+    <Card className="rounded-2xl shadow-xl border-2 border-indigo-200 dark:border-indigo-800/70 transition-all hover:shadow-2xl bg-white dark:bg-gray-900/50">
+      <CardHeader className="pb-3 border-b border-indigo-100 dark:border-indigo-900/50">
+        <CardTitle className="text-xl font-bold text-indigo-800 dark:text-indigo-300 flex justify-between items-center">
           <span>{category.name}</span>
-          <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
-            {formatCurrency(remainingAmount)} left
+          <span className="text-base font-extrabold text-green-600 dark:text-green-400">
+            {formatCurrency(remainingAmount)}
           </span>
         </CardTitle>
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+            Total Budget: {formatCurrency(totalCategoryBudget)}
+        </p>
       </CardHeader>
-      <CardContent className="flex flex-wrap gap-3">
+      <CardContent className="flex flex-wrap gap-4 p-4 justify-start">
         {category.tokens.map((token) => (
           <TokenButton
             key={token.id}
