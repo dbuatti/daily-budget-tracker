@@ -1,5 +1,5 @@
--- 1. Create budget_transactions table
-CREATE TABLE public.budget_transactions (
+-- 1. Create budget_transactions table (IF NOT EXISTS, but we use CREATE TABLE which is fine in migrations)
+CREATE TABLE IF NOT EXISTS public.budget_transactions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   amount NUMERIC NOT NULL,
@@ -9,13 +9,15 @@ CREATE TABLE public.budget_transactions (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 2. Enable RLS
+-- 2. Enable RLS (Idempotent)
 ALTER TABLE public.budget_transactions ENABLE ROW LEVEL SECURITY;
 
--- 3. RLS Policies
+-- 3. RLS Policies (Idempotent)
+DROP POLICY IF EXISTS "Users can only see their own transactions" ON public.budget_transactions;
 CREATE POLICY "Users can only see their own transactions" ON public.budget_transactions
 FOR SELECT TO authenticated USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can only insert their own transactions" ON public.budget_transactions;
 CREATE POLICY "Users can only insert their own transactions" ON public.budget_transactions
 FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 
@@ -45,8 +47,10 @@ BEGIN
   IF v_rollover_hour IS NULL THEN v_rollover_hour := 0; END IF;
 
   -- 2. Determine the target date based on rollover hour
+  -- Get the current time in the user's timezone
   v_current_time_in_tz := (NOW() AT TIME ZONE v_timezone)::time;
   
+  -- If current time is before rollover hour, the budget day started yesterday
   IF v_current_time_in_tz < (v_rollover_hour || ':00')::time THEN
     v_target_date := (NOW() AT TIME ZONE v_timezone)::date - 1;
   ELSE
@@ -54,6 +58,7 @@ BEGIN
   END IF;
 
   -- 3. Get the day boundaries using the existing function
+  -- This function returns start_time and end_time as TIMESTAMP WITH TIME ZONE
   SELECT start_time, end_time INTO v_boundaries
   FROM public.get_day_boundaries(p_user_id, v_target_date);
 

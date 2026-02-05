@@ -20,11 +20,11 @@ const TimeDebugInfo: React.FC = () => {
 
   const { timezone: userTimezone, day_rollover_hour: rolloverHour } = profile;
 
-  // 1. Client Time
+  // 1. Client Time (Formatted in local timezone)
   const clientTime = format(now, 'yyyy-MM-dd HH:mm:ss zzz', { timeZone: clientTimezone });
 
-  // 2. Supabase Time (UTC)
-  const supabaseTime = format(now, 'yyyy-MM-dd HH:mm:ss zzz', { timeZone: 'UTC' });
+  // 2. Supabase Time (UTC) - Use ISO string for reliable UTC representation
+  const supabaseTime = now.toISOString(); 
 
   // 3. User's Daily Rollover Start Time
   // Get the start of the day in the user's timezone
@@ -63,7 +63,7 @@ const TimeDebugInfo: React.FC = () => {
         <div className="flex items-center">
           <Globe className="w-4 h-4 mr-2 text-yellow-600" />
           <p>
-            <span className="font-semibold">Supabase Time (UTC):</span> {supabaseTime}
+            <span className="font-semibold">Supabase Time (UTC - DB Time):</span> {supabaseTime}
           </p>
         </div>
         <div className="flex items-center">
@@ -74,13 +74,13 @@ const TimeDebugInfo: React.FC = () => {
         </div>
         <div className="p-2 bg-yellow-100 dark:bg-yellow-900/50 rounded-lg border border-yellow-200 dark:border-yellow-800">
             <p className="font-semibold text-yellow-800 dark:text-yellow-300">
-                Current Budget Day Start:
+                Current Budget Day Start (in User TZ):
             </p>
             <p className="text-xs break-words">
                 {rolloverStartTimeFormatted}
             </p>
             <p className="font-semibold text-yellow-800 dark:text-yellow-300 mt-1">
-                Current Budget Day End:
+                Current Budget Day End (in User TZ):
             </p>
             <p className="text-xs break-words">
                 {rolloverEndTimeFormatted}
