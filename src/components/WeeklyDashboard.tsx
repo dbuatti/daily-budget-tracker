@@ -1,4 +1,13 @@
-// ... (existing imports remain the same)
+"use client";
+
+import React from 'react';
+import { useBudgetState } from '@/hooks/useBudgetState';
+import DashboardHeader from '@/components/DashboardHeader';
+import DebugActions from '@/components/DebugActions';
+import { Button } from '@/components/ui/button';
+import { RefreshCw } from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import ModuleSection from '@/components/ModuleSection';
 
 const WeeklyDashboard: React.FC = () => {
   const { 
@@ -12,7 +21,13 @@ const WeeklyDashboard: React.FC = () => {
     state // Get raw state
   } = useBudgetState();
 
-  // ... (existing loading and error states remain the same)
+  if (isLoading) {
+    return <div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>;
+  }
+
+  if (isError) {
+    return <div className="flex items-center justify-center min-h-screen"><p className="text-red-500">Error loading budget data.</p></div>;
+  }
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
@@ -86,3 +101,5 @@ const WeeklyDashboard: React.FC = () => {
     </div>
   );
 };
+
+export default WeeklyDashboard;

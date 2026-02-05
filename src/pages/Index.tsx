@@ -4,7 +4,8 @@ import { formatCurrency } from '@/lib/format';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
 import ModuleSection from '@/components/ModuleSection';
 import MondayBriefingDialog from '@/components/MondayBriefingDialog';
-import { Card, CardHeader, CardTitle, CardContent, Button } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import RLSDebugPanel from '@/components/RLSDebugPanel';
 
 const LogTransaction = () => {
