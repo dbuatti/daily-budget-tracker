@@ -5,7 +5,7 @@
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 222.2 84% 4.9%; /* Near Black */
 
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
@@ -13,8 +13,9 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Customizing Primary to be a vibrant Indigo/Blue */
+    --primary: 240 72% 50%; /* Vibrant Indigo */
+    --primary-foreground: 210 40% 98%; /* White/Off-white */
 
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -30,9 +31,9 @@
 
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --ring: 240 72% 50%; /* Match ring to new primary */
 
-    --radius: 0.5rem;
+    --radius: 1.0rem; /* Increased radius for rounded shapes */
 
     --sidebar-background: 0 0% 98%;
 
@@ -61,7 +62,8 @@
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 210 40% 98%;
+    /* Customizing Primary for Dark Mode */
+    --primary: 240 72% 60%; /* Lighter vibrant Indigo */
     --primary-foreground: 222.2 47.4% 11.2%;
 
     --secondary: 217.2 32.6% 17.5%;
@@ -78,7 +80,8 @@
 
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --ring: 240 72% 60%; /* Match ring to new primary */
+    
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;
