@@ -7,6 +7,7 @@ import { SessionContextProvider } from "./contexts/SessionContext";
 import AuthGuard from "./components/AuthGuard";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
+import Budget from "./pages/Budget"; // Import the new Budget page
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,6 +26,7 @@ const App = () => (
             
             <Route element={<AuthGuard isProtected={true} />}>
               <Route path="/" element={<Index />} />
+              <Route path="/budget" element={<Budget />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             </Route>
             
