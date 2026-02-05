@@ -1,24 +1,60 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useBudgetState } from '@/hooks/useBudgetState';
-import { formatCurrency } from '@/lib/format';
-import QuickSpendButtons from '@/components/QuickSpendButtons';
 import ModuleSection from '@/components/ModuleSection';
+import QuickSpendButtons from '@/components/QuickSpendButtons';
 import MondayBriefingDialog from '@/components/MondayBriefingDialog';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Loader2 } from 'lucide-react';
+import { GENERIC_MODULE_ID } from '@/data/budgetData';
+import { formatCurrency } from '@/lib/format';
+import { supabase } from '@/integrations/supabase/client';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import RLSDebugPanel from '@/components/RLSDebugPanel';
 
 const LogTransaction = () => {
-  const { modules, gearTravelFund, totalSpent, isLoading, handleTokenSpend, resetBriefing, clearBriefing, spentToday, isLoading: isStateLoading, state } = useBudgetState();
+  const { modules, isLoading, handleTokenSpend, resetBriefing, clearBriefing, spentToday, isLoading: isStateLoading } = useBudgetState();
   
-  // Filter modules to only show those with categories that have tokens
-  const visibleModules = modules.filter(module => 
-    module.categories.some(category => category.tokens.length > 0)
-  );
+  // State for raw transactions debug panel
+  const [rawTransactions, setRawTransactions] = React.useState<any[]>([]);
+  const [queryStatus, setQueryStatus] = React.useState<string>('idle');
+
+  const fetchRawTransactions = async () => {
+    setQueryStatus('loading');
+    try {
+      const { data, error } = await supabase
+        .from('budget_transactions')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      
+      if (error) {
+        console.error('Error fetching raw transactions:', error);
+        setQueryStatus('error');
+      } else {
+        console.log('Raw transactions from DB:', data);
+        setRawTransactions(data || []);
+        setQueryStatus('success');
+      }
+    } catch (err) {
+      console.error('Exception fetching raw transactions:', err);
+      setQueryStatus('error');
+    }
+  };
+
+  useEffect(() => {
+    fetchRawTransactions();
+  }, []);
 
   if (isLoading) {
-    return <div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+      </div>
+    );
   }
+
+  // Filter out the hidden generic module from the main display
+  const visibleModules = modules.filter(module => module.id !== GENERIC_MODULE_ID);
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
@@ -57,55 +93,66 @@ const LogTransaction = () => {
         />
       )}
 
-      {/* DEBUG PANEL - Shows raw state from database */}
-      <Card className="mt-8 rounded-2xl shadow-xl border-2 border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-900/30">
+      {/* DEBUG PANEL - Shows raw transactions and query status */}
+      <Card className="mt-8 rounded-2xl shadow-xl border-2 border-red-300 dark:border-red-700 bg-red-50/50 dark:bg-red-900/30">
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg font-bold text-blue-800 dark:text-blue-300 flex items-center justify-between">
-            <span>🔬 Raw Budget State (from weekly_budget_state)</span>
+          <CardTitle className="text-lg font-bold text-red-800 dark:text-red-300 flex items-center justify-between">
+            <span>🔬 Debug Panel - Raw Transactions</span>
+            <Button 
+              onClick={fetchRawTransactions} 
+              size="sm" 
+              variant="outline"
+              className="h-8 text-xs"
+            >
+              Refresh
+            </Button>
           </CardTitle>
-          <p className="text-xs text-blue-600 dark:text-blue-400">
-            This is the exact data stored in your database record.
+          <p className="text-xs text-red-600 dark:text-red-400">
+            Query Status: {queryStatus} | Last fetch: {new Date().toLocaleTimeString()}
           </p>
         </CardHeader>
         <CardContent>
           <div className="space-y-2 text-sm">
-            <p className="font-semibold text-blue-800 dark:text-blue-300">
-              Full State Object:
+            <p className="font-semibold text-red-800 dark:text-red-300">
+              Showing last 10 transactions from budget_transactions table:
             </p>
-            <pre className="text-xs overflow-auto max-h-96 bg-blue-100 dark:bg-blue-900/50 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
-              {JSON.stringify(state, null, 2)}
-            </pre>
-            <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
-              <strong>Note:</strong> If <code className="bg-blue-200 dark:bg-blue-800 px-1 rounded">current_tokens</code> is empty or missing, your categories won't appear. Click the "Reinitialize Categories" button below to restore them.
+            {rawTransactions.length === 0 ? (
+              <p className="text-red-600 dark:text-red-400 italic">No transactions found in database.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-red-200 dark:border-red-800">
+                      <th className="text-left p-1">ID</th>
+                      <th className="text-left p-1">Amount</th>
+                      <th className="text-left p-1">Type</th>
+                      <th className="text-left p-1">Category</th>
+                      <th className="text-left p-1">Created At (UTC)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rawTransactions.map((tx) => (
+                      <tr key={tx.id} className="border-b border-red-100 dark:border-red-900/50">
+                        <td className="p-1 font-mono">{tx.id.slice(0, 8)}...</td>
+                        <td className="p-1 font-bold">{formatCurrency(tx.amount)}</td>
+                        <td className="p-1">{tx.transaction_type}</td>
+                        <td className="p-1">{tx.category_id || '—'}</td>
+                        <td className="p-1 font-mono text-gray-600 dark:text-gray-400">
+                          {new Date(tx.created_at).toISOString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="text-xs text-red-600 dark:text-red-400 mt-2">
+              Note: The "Total Spent Today" uses get_daily_spent_amount() RPC which filters by timezone and rollover. 
+              Check your Supabase database logs for detailed RPC execution logs.
             </p>
-            <Button 
-              onClick={async () => {
-                if (!state || state.current_tokens.length === 0) {
-                  // Initialize with default modules
-                  const { initialModules, WEEKLY_BUDGET_TOTAL } = await import('@/data/budgetData');
-                  const { supabase } = await import('@/integrations/supabase/client');
-                  const { useSession } = await import('@/contexts/SessionContext');
-                  const { useQueryClient } = await import('@tanstack/react-query');
-                  
-                  // We need to get the user - this is tricky in this context, so we'll just reload
-                  // For now, let's use a simpler approach: call the mutation from the hook
-                  // But we don't have access to the hook's functions here easily.
-                  // Instead, we'll create a simple endpoint or just instruct the user.
-                  alert('Please use the "Simulate Monday Reset" button to reinitialize, or contact support if that doesn\'t work.');
-                } else {
-                  alert('Your state already has categories. No need to reinitialize.');
-                }
-              }}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-xs"
-            >
-              Reinitialize Categories (if state is empty)
-            </Button>
           </div>
         </CardContent>
       </Card>
-
-      {/* DEBUG PANEL - Shows raw transactions and query status */}
-      {/* ... (existing raw transactions debug panel remains the same) */}
 
       {/* RLS Debug Panel */}
       <RLSDebugPanel />

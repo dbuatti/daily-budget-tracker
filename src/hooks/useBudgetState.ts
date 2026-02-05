@@ -1,342 +1,340 @@
-"use client";
-
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useSession } from '@/contexts/SessionContext';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Module } from '@/types/budget';
+import { Module } from '@/types/budget'; // Changed: import from budget, not supabase
+import { WeeklyBudgetState } from '@/types/supabase';
 import { formatCurrency } from '@/lib/format';
-import { WEEKLY_BUDGET_TOTAL, initialModules } from '@/data/budgetData';
 import { toast } from 'sonner';
-import { useUserProfile } from './useUserProfile';
+import { GENERIC_MODULE_ID, WEEKLY_BUDGET_TOTAL } from '@/data/budgetData';
 
-// Types
-interface WeeklyBudgetState {
-  user_id: string;
-  current_tokens: Module[];
-  gear_travel_fund: number;
-  last_reset_date: string;
-  updated_at: string;
-}
+const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState> => {
+  const { data, error } = await supabase
+    .from('weekly_budget_state')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
 
-interface BriefingData {
-  totalSpent: number;
-  totalBudget: number;
-  totalSurplus: number;
-  totalDeficit: number;
-  newGearTravelFund: number;
-  categoryBriefings: Array<{
-    categoryName: string;
-    difference: number;
-    newBaseValue?: number;
-  }>;
-}
-
-// Helper functions
-const calculateTotalSpent = (modules: Module[]): number => {
-  return modules.reduce((total, module) => 
-    total + module.categories.reduce((catTotal, category) => 
-      catTotal + category.tokens.filter(t => t.spent).reduce((sum, token) => sum + token.value, 0)
-    , 0)
-  , 0);
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(error.message);
+  }
+  
+  if (data) {
+    return data as WeeklyBudgetState;
+  }
+  
+  // Return default state if no record exists
+  return {
+    user_id: userId,
+    current_tokens: [],
+    gear_travel_fund: 0,
+    last_reset_date: new Date().toISOString().split('T')[0],
+    updated_at: new Date().toISOString()
+  };
 };
 
-const handleTokenSpend = useCallback(async (categoryId: string, tokenId: string) => {
-  if (!user || !state) return;
-
-  try {
-    // Find and mark token as spent
-    const newModules = modules.map(module => ({
-      ...module,
-      categories: module.categories.map(category => 
-        category.id === categoryId
-          ? {
-              ...category,
-              tokens: category.tokens.map(token =>
-                token.id === tokenId ? { ...token, spent: true } : token
-              )
-            }
-          : category
-      )
-    }));
-
-    // Update state in DB
-    const { error } = await supabase
-      .from('weekly_budget_state')
-      .update({ current_tokens: newModules })
-      .eq('user_id', user.id);
-
-    if (error) throw error;
-
-    // Invalidate and refetch
-    await queryClient.invalidateQueries({ queryKey: ['weeklyBudgetState'] });
-    await refetchSpentToday();
-    
-    toast.success('Transaction logged successfully');
-  } catch (error) {
-    console.error('Error spending token:', error);
-    toast.error('Failed to log transaction');
-  }
-}, [user, state, modules, queryClient, refetchSpentToday]);
-
-const handleCustomSpend = useCallback(async (categoryId: string, amount: number) => {
-  if (!user || !state) return;
-
-  try {
-    // Record custom spend in transactions table
-    const { error: transactionError } = await supabase
-      .from('budget_transactions')
-      .insert({
-        user_id: user.id,
-        amount,
-        category_id: categoryId,
-        transaction_type: 'custom_spend',
-      });
-
-    if (transactionError) throw transactionError;
-
-    // Update the category's base value (increase it by the custom spend amount)
-    const newModules = modules.map(module => ({
-      ...module,
-      categories: module.categories.map(category => 
-        category.id === categoryId
-          ? {
-              ...category,
-              baseValue: category.baseValue + amount,
-              tokens: [...category.tokens, { id: `custom-${Date.now()}`, value: amount, spent: true }]
-            }
-          : category
-      )
-    }));
-
-    const { error: stateError } = await supabase
-      .from('weekly_budget_state')
-      .update({ current_tokens: newModules })
-      .eq('user_id', user.id);
-
-    if (stateError) throw stateError;
-
-    await queryClient.invalidateQueries({ queryKey: ['weeklyBudgetState'] });
-    await refetchSpentToday();
-    
-    toast.success('Custom spend logged');
-  } catch (error) {
-    console.error('Error adding custom spend:', error);
-    toast.error('Failed to log custom spend');
-  }
-}, [user, state, modules, queryClient, refetchSpentToday]);
-
-const handleGenericSpend = useCallback(async (amount: number) => {
-  if (!user) return;
-
-  try {
-    const { error } = await supabase
-      .from('budget_transactions')
-      .insert({
-        user_id: user.id,
-        amount,
-        transaction_type: 'generic_spend',
-      });
-
-    if (error) throw error;
-    await refetchSpentToday();
-    toast.success('Generic spend logged');
-  } catch (error) {
-    console.error('Error logging generic spend:', error);
-    toast.error('Failed to log spend');
-  }
-}, [user, refetchSpentToday]);
-
-const handleFundAdjustment = useCallback(async (newFund: number) => {
-  if (!user || !state) return;
-
-  try {
-    const { error } = await supabase
-      .from('weekly_budget_state')
-      .update({ gear_travel_fund: newFund })
-      .eq('user_id', user.id);
-
-    if (error) throw error;
-    await queryClient.invalidateQueries({ queryKey: ['weeklyBudgetState'] });
-    toast.success('Fund updated');
-  } catch (error) {
-    console.error('Error adjusting fund:', error);
-    toast.error('Failed to update fund');
-  }
-}, [user, state, queryClient]);
-
-const calculateMondayReset = useCallback((): BriefingData => {
-  if (!state) {
-    return {
-      totalSpent: 0,
-      totalBudget: WEEKLY_BUDGET_TOTAL,
-      totalSurplus: 0,
-      totalDeficit: 0,
-      newGearTravelFund: 0,
-      categoryBriefings: [],
-    };
-  }
-
-  const totalSpentWeekly = calculateTotalSpent(modules);
-  const totalBudget = WEEKLY_BUDGET_TOTAL;
-  const overallDifference = totalBudget - totalSpentWeekly;
+const fetchSpentToday = async (userId: string): Promise<number> => {
+  const { data, error } = await supabase.rpc('get_daily_spent_amount', { p_user_id: userId });
   
-  let totalSurplus = 0;
-  let totalDeficit = 0;
-  const categoryBriefings: BriefingData['categoryBriefings'] = [];
+  if (error) {
+    console.error('RPC Error:', error);
+    throw new Error(error.message);
+  }
+  
+  return data || 0;
+};
 
-  // Calculate category adjustments
-  modules.forEach(module => {
-    module.categories.forEach(category => {
-      const initialBudget = category.baseValue;
-      const totalSpentInCategory = category.tokens
-        .filter(t => t.spent)
-        .reduce((sum, token) => sum + token.value, 0);
-      const difference = initialBudget - totalSpentInCategory;
-
-      if (difference < 0) {
-        // Deficit: category went over
-        totalDeficit += Math.abs(difference);
-        categoryBriefings.push({
-          categoryName: category.name,
-          difference: -Math.abs(difference),
-          newBaseValue: initialBudget + Math.abs(difference),
-        });
-      } else if (difference > 0) {
-        // Surplus: category saved money
-        totalSurplus += difference;
-      }
+const logTransaction = async (userId: string, amount: number, categoryId?: string, transactionType: 'token_spend' | 'custom_spend' | 'generic_spend' = 'token_spend') => {
+  const { error } = await supabase
+    .from('budget_transactions')
+    .insert({
+      user_id: userId,
+      amount,
+      category_id: categoryId,
+      transaction_type: transactionType
     });
+
+  if (error) {
+    console.error('Transaction log error:', error);
+    throw new Error(error.message);
+  }
+};
+
+const saveBudgetState = async (userId: string, modules: Module[], gearTravelFund: number) => {
+  const { error } = await supabase
+    .from('weekly_budget_state')
+    .upsert({
+      user_id: userId,
+      current_tokens: modules,
+      gear_travel_fund: gearTravelFund,
+      last_reset_date: new Date().toISOString().split('T')[0],
+      updated_at: new Date().toISOString()
+    });
+
+  if (error) {
+    console.error('Save state error:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const useBudgetState = () => {
+  const { user } = useSession();
+  const queryClient = useQueryClient();
+  const userId = user?.id;
+
+  // State for Monday Briefing dialog
+  const [briefingData, setBriefingData] = useState<{
+    totalSpent: number;
+    totalBudget: number;
+    totalSurplus: number;
+    totalDeficit: number;
+    newGearTravelFund: number;
+    categoryBriefings: Array<{ categoryName: string; difference: number; newBaseValue?: number }>;
+  } | null>(null);
+
+  const { data: state, isLoading, isError } = useQuery({
+    queryKey: ['budgetState', userId],
+    queryFn: () => fetchBudgetState(userId!),
+    enabled: !!userId,
   });
 
-  // Calculate new fund
-  const newGearTravelFund = gearTravelFund + totalSurplus - totalDeficit;
+  const { data: spentToday, refetch: refetchSpentToday } = useQuery({
+    queryKey: ['spentToday', userId],
+    queryFn: () => fetchSpentToday(userId!),
+    enabled: !!userId,
+  });
+
+  const logTransactionMutation = useMutation({
+    mutationFn: ({ amount, categoryId, transactionType }: { amount: number; categoryId?: string; transactionType: 'token_spend' | 'custom_spend' | 'generic_spend' }) => 
+      logTransaction(userId!, amount, categoryId, transactionType),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: (data: { modules: Module[]; gearTravelFund: number }) => 
+      saveBudgetState(userId!, data.modules, data.gearTravelFund),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['budgetState', userId] });
+    },
+  });
+
+  const modules: Module[] = state?.current_tokens || [];
+  const gearTravelFund = state?.gear_travel_fund || 0;
+
+  const totalSpentWeekly = modules.reduce((total, module) => 
+    total + module.categories.reduce((catTotal, category) => 
+      catTotal + category.tokens.filter(t => t.spent).reduce((tokenTotal, token) => tokenTotal + token.value, 0)
+    , 0)
+  , 0);
+
+  const handleTokenSpend = useCallback(async (categoryId: string, tokenId: string) => {
+    console.log('[useBudgetState] handleTokenSpend CALLED with:', { categoryId, tokenId });
+    
+    try {
+      let categoryFound = false;
+      let tokenFound = false;
+      let amount = 0;
+
+      console.log('[useBudgetState] Current modules structure:', JSON.stringify(modules, null, 2));
+
+      const updatedModules = modules.map(module => ({
+        ...module,
+        categories: module.categories.map(category => {
+          if (category.id === categoryId) {
+            categoryFound = true;
+            console.log('[useBudgetState] Found category:', category.name);
+            const updatedTokens = category.tokens.map(token => {
+              if (token.id === tokenId) {
+                tokenFound = true;
+                amount = token.value;
+                console.log('[useBudgetState] Found token, value:', token.value, 'spent:', token.spent);
+                return { ...token, spent: true };
+              }
+              return token;
+            });
+            return { ...category, tokens: updatedTokens };
+          }
+          return category;
+        })
+      }));
+
+      if (!categoryFound || !tokenFound) {
+        console.error('[useBudgetState] Category or token not found!', { categoryFound, tokenFound, categoryId, tokenId });
+        throw new Error('Category or token not found');
+      }
+
+      console.log('[useBudgetState] About to log transaction with amount:', amount);
+      
+      console.log('[useBudgetState] Calling logTransactionMutation.mutateAsync...');
+      await logTransactionMutation.mutateAsync({ amount, categoryId, transactionType: 'token_spend' });
+      console.log('[useBudgetState] Transaction logged successfully');
+
+      console.log('[useBudgetState] About to save state with updated modules');
+      
+      await saveMutation.mutateAsync({ modules: updatedModules, gearTravelFund });
+
+      console.log('[useBudgetState] State saved successfully');
+      toast.success(`Logged ${formatCurrency(amount)}`);
+    } catch (error) {
+      console.error('[useBudgetState] Error in handleTokenSpend:', error);
+      toast.error('Failed to log transaction');
+    }
+  }, [modules, gearTravelFund, logTransactionMutation, saveMutation]);
+
+  const handleCustomSpend = useCallback(async (categoryId: string, amount: number) => {
+    try {
+      const updatedModules = modules.map(module => ({
+        ...module,
+        categories: module.categories.map(category => {
+          if (category.id === categoryId) {
+            const customTokenId = `custom-${categoryId}-${Date.now()}-${Math.random()}`;
+            const newToken = { id: customTokenId, value: amount, spent: true };
+            return { 
+              ...category, 
+              tokens: [...category.tokens, newToken] 
+            };
+          }
+          return category;
+        })
+      }));
+
+      await logTransactionMutation.mutateAsync({ amount, categoryId, transactionType: 'custom_spend' });
+      await saveMutation.mutateAsync({ modules: updatedModules, gearTravelFund });
+      toast.success(`Logged custom spend: ${formatCurrency(amount)}`);
+    } catch (error) {
+      console.error('Error in handleCustomSpend:', error);
+      toast.error('Failed to log custom spend');
+    }
+  }, [modules, gearTravelFund, logTransactionMutation, saveMutation]);
+
+  const handleGenericSpend = useCallback(async (amount: number) => {
+    try {
+      await logTransactionMutation.mutateAsync({ amount, transactionType: 'generic_spend' });
+      toast.success(`Logged generic spend: ${formatCurrency(amount)}`);
+    } catch (error) {
+      console.error('Error in handleGenericSpend:', error);
+      toast.error('Failed to log generic spend');
+    }
+  }, [logTransactionMutation]);
+
+  const handleFundAdjustment = useCallback(async (newFund: number) => {
+    try {
+      await saveMutation.mutateAsync({ modules, gearTravelFund: newFund });
+      toast.success(`Gear/Travel Fund updated to ${formatCurrency(newFund)}`);
+    } catch (error) {
+      console.error('Error in handleFundAdjustment:', error);
+      toast.error('Failed to update fund');
+    }
+  }, [modules, gearTravelFund, saveMutation]);
+
+  const handleMondayReset = useCallback(async () => {
+    try {
+      // Calculate surplus/deficit
+      const totalSpent = totalSpentWeekly;
+      const totalBudget = WEEKLY_BUDGET_TOTAL;
+      const difference = totalBudget - totalSpent;
+      
+      let newFund = gearTravelFund;
+      let categoryBriefings: Array<{ categoryName: string; difference: number; newBaseValue?: number }> = [];
+
+      if (difference > 0) {
+        // Surplus - add to fund
+        newFund += difference;
+      } else {
+        // Deficit - reduce category budgets proportionally
+        const deficit = Math.abs(difference);
+        const totalBaseValue = modules.reduce((sum, module) => 
+          sum + module.categories.reduce((catSum, cat) => catSum + cat.baseValue, 0)
+        , 0);
+        
+        const deficitRatio = deficit / totalBaseValue;
+        
+        const adjustedModules = modules.map(module => ({
+          ...module,
+          categories: module.categories.map(category => {
+            const adjustment = Math.round(category.baseValue * deficitRatio * 100) / 100;
+            const newBaseValue = category.baseValue - adjustment;
+            categoryBriefings.push({
+              categoryName: category.name,
+              difference: -adjustment,
+              newBaseValue: newBaseValue
+            });
+            return {
+              ...category,
+              baseValue: newBaseValue,
+              tokens: category.tokens.map(token => ({ ...token, spent: false }))
+            };
+          })
+        }));
+
+        // Save adjusted modules
+        await saveMutation.mutateAsync({ modules: adjustedModules, gearTravelFund });
+      }
+
+      // Reset all tokens to unspent
+      const resetModules = modules.map(module => ({
+        ...module,
+        categories: module.categories.map(category => ({
+          ...category,
+          tokens: category.tokens.map(token => ({ ...token, spent: false }))
+        }))
+      }));
+
+      await saveMutation.mutateAsync({ modules: resetModules, gearTravelFund: newFund });
+
+      toast.success('Weekly reset complete!');
+      queryClient.invalidateQueries({ queryKey: ['budgetState', userId] });
+      queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
+
+      // Set briefing data to show the dialog
+      setBriefingData({
+        totalSpent,
+        totalBudget,
+        totalSurplus: difference > 0 ? difference : 0,
+        totalDeficit: difference < 0 ? Math.abs(difference) : 0,
+        newGearTravelFund: newFund,
+        categoryBriefings: categoryBriefings.filter(item => item.difference !== 0)
+      });
+    } catch (error) {
+      console.error('Error in handleMondayReset:', error);
+      toast.error('Failed to reset weekly budget');
+      throw error;
+    }
+  }, [modules, gearTravelFund, totalSpentWeekly, saveMutation, queryClient, userId]);
+
+  const handleFullReset = useCallback(async () => {
+    try {
+      await saveMutation.mutateAsync({ modules: [], gearTravelFund: 0 });
+      toast.success('Full budget reset complete');
+      queryClient.invalidateQueries({ queryKey: ['budgetState', userId] });
+      queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
+    } catch (error) {
+      console.error('Error in handleFullReset:', error);
+      toast.error('Failed to reset budget');
+    }
+  }, [saveMutation, queryClient, userId]);
+
+  const clearBriefing = useCallback(() => {
+    setBriefingData(null);
+  }, []);
 
   return {
+    modules,
+    gearTravelFund,
     totalSpent: totalSpentWeekly,
-    totalBudget,
-    totalSurplus,
-    totalDeficit,
-    newGearTravelFund,
-    categoryBriefings,
+    spentToday: spentToday || 0,
+    isLoading,
+    isError,
+    handleTokenSpend,
+    handleCustomSpend,
+    handleGenericSpend,
+    handleFundAdjustment,
+    handleMondayReset,
+    handleFullReset,
+    refetchSpentToday,
+    resetBriefing: briefingData, // Add this
+    clearBriefing, // Add this
   };
-}, [state, modules, gearTravelFund]);
-
-const handleMondayReset = useCallback(async () => {
-  if (!user) return;
-
-  try {
-    const briefingData = calculateMondayReset();
-    
-    // Reset all tokens to unspent and keep the base values
-    const resetModules = initialModules.map(module => ({
-      ...module,
-      categories: module.categories.map(category => ({
-        ...category,
-        tokens: category.tokens.map(token => ({ ...token, spent: false })),
-      }))
-    }));
-
-    // Update state with reset tokens and new fund
-    const { error } = await supabase
-      .from('weekly_budget_state')
-      .upsert({
-        user_id: user.id,
-        current_tokens: resetModules,
-        gear_travel_fund: briefingData.newGearTravelFund,
-        last_reset_date: new Date().toISOString().split('T')[0],
-        updated_at: new Date().toISOString(),
-      });
-
-    if (error) throw error;
-
-    await queryClient.invalidateQueries({ queryKey: ['weeklyBudgetState'] });
-    await refetchSpentToday();
-    
-    toast.success('Week reset complete!');
-  } catch (error) {
-    console.error('Error resetting budget:', error);
-    toast.error('Failed to reset budget');
-  }
-}, [user, queryClient, refetchSpentToday, calculateMondayReset]);
-
-const handleFullReset = useCallback(async () => {
-  if (!user) return;
-  
-  if (!confirm('Are you sure? This will wipe all data and reset to initial state.')) return;
-
-  try {
-    // Delete existing record
-    await supabase
-      .from('weekly_budget_state')
-      .delete()
-      .eq('user_id', user.id);
-
-    // Create fresh record with initial modules
-    const { error } = await supabase
-      .from('weekly_budget_state')
-      .insert({
-        user_id: user.id,
-        current_tokens: initialModules,
-        gear_travel_fund: 0,
-        last_reset_date: new Date().toISOString().split('T')[0],
-        updated_at: new Date().toISOString(),
-      });
-
-    if (error) throw error;
-
-    await queryClient.invalidateQueries({ queryKey: ['weeklyBudgetState'] });
-    await refetchSpentToday();
-    
-    toast.success('Full reset complete!');
-  } catch (error) {
-    console.error('Error doing full reset:', error);
-    toast.error('Failed to reset');
-  }
-}, [user, queryClient, refetchSpentToday]);
-
-const clearBriefing = useCallback(() => {
-  // This would clear any briefing data from localStorage/session
-  sessionStorage.removeItem('mondayBriefing');
-}, []);
-
-const resetBriefing = useMemo<BriefingData | null>(() => {
-  // Check if we should show Monday briefing
-  const lastReset = state?.last_reset_date;
-  const today = new Date().toISOString().split('T')[0];
-  
-  if (lastReset !== today) {
-    return calculateMondayReset();
-  }
-  
-  // Check session storage for manual trigger
-  const sessionBriefing = sessionStorage.getItem('mondayBriefing');
-  if (sessionBriefing) {
-    try {
-      return JSON.parse(sessionBriefing);
-    } catch {
-      return null;
-    }
-  }
-  
-  return null;
-}, [state?.last_reset_date, calculateMondayReset]);
-
-return {
-  modules,
-  gearTravelFund,
-  totalSpent: totalSpentWeekly,
-  spentToday: spentToday || 0,
-  isLoading,
-  isError,
-  handleTokenSpend,
-  handleCustomSpend,
-  handleGenericSpend,
-  handleFundAdjustment,
-  handleMondayReset,
-  handleFullReset,
-  refetchSpentToday,
-  resetBriefing,
-  clearBriefing,
-  state,
 };
