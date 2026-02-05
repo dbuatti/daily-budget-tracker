@@ -1,71 +1,28 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { initialModules, WEEKLY_BUDGET_TOTAL } from '@/data/budgetData';
-import { Module } from '@/types/budget';
+import React from 'react';
+import { useBudgetState } from '@/hooks/useBudgetState';
 import DashboardHeader from './DashboardHeader';
 import CategoryCard from './CategoryCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { RefreshCw } from 'lucide-react';
-import { showSuccess } from '@/utils/toast';
-import { formatCurrency } from '@/lib/format';
+import { RefreshCw, Loader2 } from 'lucide-react';
 
 const WeeklyDashboard: React.FC = () => {
-  const [modules, setModules] = useState<Module[]>(initialModules);
-  const [gearTravelFund, setGearTravelFund] = useState<number>(0);
+  const { 
+    modules, 
+    gearTravelFund, 
+    totalSpent, 
+    isLoading, 
+    handleTokenSpend, 
+    handleMondayReset 
+  } = useBudgetState();
 
-  const totalSpent = useMemo(() => {
-    return modules.reduce((moduleAcc, module) => {
-      return moduleAcc + module.categories.reduce((catAcc, category) => {
-        return catAcc + category.tokens.filter(t => t.spent).reduce((tokenAcc, token) => tokenAcc + token.value, 0);
-      }, 0);
-    }, 0);
-  }, [modules]);
-
-  const handleTokenSpend = useCallback((categoryId: string, tokenId: string) => {
-    setModules(prevModules =>
-      prevModules.map(module => ({
-        ...module,
-        categories: module.categories.map(category => {
-          if (category.id === categoryId) {
-            return {
-              ...category,
-              tokens: category.tokens.map(token => {
-                if (token.id === tokenId && !token.spent) {
-                  showSuccess(`Spent ${formatCurrency(token.value)} on ${category.name}.`);
-                  return { ...token, spent: true };
-                }
-                return token;
-              }),
-            };
-          }
-          return category;
-        }),
-      }))
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+      </div>
     );
-  }, []);
-
-  const handleMondayReset = useCallback(() => {
-    const remainingBudget = WEEKLY_BUDGET_TOTAL - totalSpent;
-    
-    let newGearTravelFund = gearTravelFund;
-
-    if (remainingBudget > 0) {
-      // 1. Calculate Surplus & Transfer
-      const surplus = remainingBudget;
-      newGearTravelFund += surplus;
-      showSuccess(`Weekly surplus of ${formatCurrency(surplus)} swept to Gear/Travel Fund!`);
-    } else if (remainingBudget < 0) {
-      // 2. Handle Deficit
-      const deficit = Math.abs(remainingBudget);
-      showSuccess(`Overspent by ${formatCurrency(deficit)}. This deficit would be subtracted from next week's budget.`);
-    } else {
-        showSuccess("Budget perfectly balanced. No surplus or deficit.");
-    }
-
-    // 3. Refresh UI: Un-grey all buttons. Reset "Spent" counter to $0.
-    setModules(initialModules);
-    setGearTravelFund(newGearTravelFund);
-  }, [totalSpent, gearTravelFund]);
+  }
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
