@@ -8,6 +8,66 @@ import { formatCurrency } from '@/lib/format';
 import { toast } from 'sonner';
 import { GENERIC_MODULE_ID, WEEKLY_BUDGET_TOTAL, initialModules, FUEL_CATEGORY_ID, GENERIC_CATEGORY_ID } from '@/data/budgetData';
 
+// Helper function to merge saved state with initial structure
+const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Module[] => {
+  // Start with a deep clone of the current initial structure to ensure all new modules/categories are present
+  const mergedModules: Module[] = JSON.parse(JSON.stringify(initialModules));
+
+  // Create maps for quick lookup of saved data
+  const savedModuleMap = new Map(savedModules.map(m => [m.id, m]));
+  const mergedModuleMap = new Map(mergedModules.map(m => [m.id, m]));
+
+  for (const initialModule of mergedModules) {
+    const savedModule = savedModuleMap.get(initialModule.id);
+
+    if (savedModule) {
+      const savedCategoryMap = new Map(savedModule.categories.map(c => [c.id, c]));
+
+      initialModule.categories = initialModule.categories.map(initialCategory => {
+        const savedCategory = savedCategoryMap.get(initialCategory.id);
+
+        if (savedCategory) {
+          // 1. Preserve baseValue (might be adjusted due to deficit)
+          initialCategory.baseValue = savedCategory.baseValue;
+          
+          // 2. Merge tokens: Start with fresh initial tokens, overlay spent status, add custom tokens
+          const baseTokens = JSON.parse(JSON.stringify(initialCategory.tokens));
+          const savedTokenMap = new Map(savedCategory.tokens.map(t => [t.id, t]));
+          
+          const finalTokens = baseTokens.map(baseToken => {
+              const savedToken = savedTokenMap.get(baseToken.id);
+              if (savedToken) {
+                  // Update spent status of base tokens
+                  return { ...baseToken, spent: savedToken.spent };
+              }
+              return baseToken;
+          });
+          
+          // Add custom/generic tokens (those not present in the initial structure)
+          for (const savedToken of savedCategory.tokens) {
+              if (!baseTokens.some(t => t.id === savedToken.id)) {
+                  finalTokens.push(savedToken);
+              }
+          }
+          
+          initialCategory.tokens = finalTokens;
+        }
+        return initialCategory;
+      });
+    }
+  }
+  
+  // 3. Ensure any saved modules not in initialModules (like Generic Module Z) are preserved.
+  for (const savedModule of savedModules) {
+      if (!mergedModuleMap.has(savedModule.id)) {
+          mergedModules.push(savedModule);
+      }
+  }
+
+  return mergedModules;
+};
+
+
 const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState> => {
   const { data, error } = await supabase
     .from('weekly_budget_state')
@@ -21,8 +81,12 @@ const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState> => {
   
   if (data) {
     const state = data as WeeklyBudgetState;
+    
+    // Merge saved state with initial structure to ensure all modules are present
+    state.current_tokens = mergeBudgetState(state.current_tokens, initialModules);
+
     if (!state.current_tokens || state.current_tokens.length === 0) {
-      console.log('[fetchBudgetState] Found empty state, initializing from transactions...');
+      console.log('[fetchBudgetState] Found empty state after merge, initializing from transactions...');
       try {
         const initializedState = await initializeStateFromTransactions(userId);
         return initializedState;
