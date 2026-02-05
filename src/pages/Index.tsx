@@ -9,6 +9,7 @@ import { formatCurrency } from '@/lib/format';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import RLSDebugPanel from '@/components/RLSDebugPanel';
 
 const LogTransaction = () => {
   const { modules, isLoading, handleTokenSpend, resetBriefing, clearBriefing, spentToday, isLoading: isStateLoading } = useBudgetState();
@@ -152,6 +153,9 @@ const LogTransaction = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* RLS Debug Panel */}
+      <RLSDebugPanel />
     </div>
   );
 };
