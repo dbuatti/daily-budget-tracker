@@ -1,7 +1,8 @@
 import React, { useEffect } from 'react';
 import { updateUserBudgetByEmail } from '@/lib/updateBudget';
+import { Module } from '@/types/budget';
 
-// New budget configuration for daniele.buatti@gmail.com
+// New budget configuration for daniele.buatti@gmail.com - $450 Weekly Budget
 const newModules: Module[] = [
   {
     id: 'A',
