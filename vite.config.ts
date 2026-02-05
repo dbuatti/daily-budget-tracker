@@ -15,6 +15,7 @@ export default defineConfig(() => ({
     },
   },
   optimizeDeps: {
-    include: ['@supabase/auth-ui-react'],
+    // Removed '@supabase/auth-ui-react' to prevent hook conflicts
+    include: [],
   },
 }));
