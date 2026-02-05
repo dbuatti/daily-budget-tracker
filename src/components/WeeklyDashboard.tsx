@@ -2,10 +2,11 @@ import React from 'react';
 import { useBudgetState } from '@/hooks/useBudgetState';
 import DashboardHeader from './DashboardHeader';
 import ModuleSection from './ModuleSection';
-import DebugActions from './DebugActions'; // Updated import
+import DebugActions from './DebugActions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
+import BudgetRemainingBar from './BudgetRemainingBar';
 
 const WeeklyDashboard: React.FC = () => {
   const { 
@@ -62,6 +63,11 @@ const WeeklyDashboard: React.FC = () => {
         totalSpent={totalSpent} 
         gearTravelFund={gearTravelFund} 
       />
+
+      {/* Minimalist Progress Bar showing remaining weekly budget */}
+      <div className="mt-4 rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
+        <BudgetRemainingBar spent={totalSpent} total={450} className="border border-gray-200 dark:border-gray-700" />
+      </div>
 
       <div className="flex justify-end items-center space-x-4 mb-6">
         <DebugActions /> {/* Use DebugActions here */}
