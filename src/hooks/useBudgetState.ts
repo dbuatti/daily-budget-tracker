@@ -7,17 +7,20 @@ import { Module, Token } from '@/types/budget';
 import { WeeklyBudgetState } from '@/types/supabase';
 import { showSuccess, showError } from '@/utils/toast';
 import { formatCurrency } from '@/lib/format';
-import { isToday, parseISO } from 'date-fns';
+import { isToday, parseISO, isBefore, startOfWeek, isSameDay } from 'date-fns';
 
 const TABLE_NAME = 'weekly_budget_state';
 
-// Helper to check if the last reset date was before today
-const needsReset = (lastResetDate: string) => {
-  const lastDate = parseISO(lastResetDate);
-  // Check if the last reset was NOT today (assuming reset happens on Monday)
-  // For simplicity in this demo, we'll just check if it's not today, 
-  // but a real app would check if it's a new week/Monday.
-  return !isToday(lastDate);
+// Helper to determine if a weekly reset is due (assuming week starts on Monday)
+const isResetDue = (lastResetDate: string): boolean => {
+  const lastReset = parseISO(lastResetDate);
+  const today = new Date();
+  
+  // Define the start of the current week (Monday, weekStartsOn: 1)
+  const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 }); 
+
+  // A reset is due if the last reset date was before the start of the current week.
+  return isBefore(lastReset, startOfCurrentWeek);
 };
 
 const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState | null> => {
@@ -29,7 +32,6 @@ const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState | nul
 
   if (error && error.code !== 'PGRST116') { // PGRST116 means "No rows found"
     // If we get an error other than "No rows found", we throw it.
-    // This includes the 404 error if the table is not exposed.
     throw new Error(error.message);
   }
   
@@ -89,14 +91,54 @@ export const useBudgetState = () => {
     }
   });
 
-  // Initialize state from DB or defaults
+  // Function to perform the weekly reset logic
+  const triggerWeeklyReset = useCallback((currentModules: Module[], currentFund: number) => {
+    if (!userId) return;
+
+    // Calculate total spent based on the provided modules (which should be the old state)
+    const totalSpentInOldWeek = currentModules.reduce((moduleAcc, module) => {
+      return moduleAcc + module.categories.reduce((catAcc, category) => {
+        return catAcc + category.tokens.filter(t => t.spent).reduce((tokenAcc, token) => tokenAcc + token.value, 0);
+      }, 0);
+    }, 0);
+
+    // Calculate remaining budget based on the ACTIVE TOKEN BUDGET
+    const remainingActiveBudget = TOTAL_TOKEN_BUDGET - totalSpentInOldWeek;
+    
+    let newGearTravelFund = currentFund;
+
+    if (remainingActiveBudget > 0) {
+      const surplus = remainingActiveBudget;
+      newGearTravelFund += surplus;
+      showSuccess(`Weekly surplus of ${formatCurrency(surplus)} swept to Gear/Travel Fund!`);
+    } else if (remainingActiveBudget < 0) {
+      const deficit = Math.abs(remainingActiveBudget);
+      showError(`Overspent active budget by ${formatCurrency(deficit)}. This deficit would be subtracted from next week's budget.`);
+    } else {
+        showSuccess("Active budget perfectly balanced. No surplus or deficit.");
+    }
+
+    // Reset tokens to initial state
+    const resetModules = initialModules;
+    setModules(resetModules);
+    setGearTravelFund(newGearTravelFund);
+
+    // Save the reset state to the database
+    saveMutation.mutate({
+      user_id: userId,
+      current_tokens: resetModules,
+      gear_travel_fund: newGearTravelFund,
+      last_reset_date: new Date().toISOString().split('T')[0],
+    });
+  }, [userId, saveMutation]);
+
+
+  // Initialize state from DB or defaults, and check for automatic reset
   useEffect(() => {
     // Only proceed if not loading and we have a user ID
     if (isLoading || !userId || isInitialized) return;
 
     if (isError) {
-      // If there was an error fetching (e.g., 404 because table is not exposed yet), 
-      // we initialize locally but DO NOT attempt to save, preventing repeated 404 POST requests.
       setModules(initialModules);
       setGearTravelFund(0);
       setIsInitialized(true);
@@ -104,24 +146,40 @@ export const useBudgetState = () => {
       return;
     }
 
+    const todayISO = new Date().toISOString().split('T')[0];
+    let loadedModules = initialModules;
+    let loadedFund = 0;
+    let loadedLastResetDate = todayISO;
+
     if (dbState) {
       // Load state from DB
-      setGearTravelFund(dbState.gear_travel_fund);
-      setModules(dbState.current_tokens);
-      setIsInitialized(true);
+      loadedFund = dbState.gear_travel_fund;
+      loadedModules = dbState.current_tokens;
+      loadedLastResetDate = dbState.last_reset_date;
+      
+      setGearTravelFund(loadedFund);
+      setModules(loadedModules);
+
+      // Check for automatic weekly reset
+      if (isResetDue(loadedLastResetDate)) {
+        // Trigger the reset using the loaded data
+        triggerWeeklyReset(loadedModules, loadedFund);
+      }
     } else {
       // If no state exists (PGRST116), initialize with defaults and save
       setModules(initialModules);
       setGearTravelFund(0);
-      setIsInitialized(true);
+      
       saveMutation.mutate({
         user_id: userId,
         current_tokens: initialModules,
         gear_travel_fund: 0.00,
-        last_reset_date: new Date().toISOString().split('T')[0],
+        last_reset_date: todayISO,
       });
     }
-  }, [dbState, isLoading, userId, isInitialized, isError, saveMutation]);
+    
+    setIsInitialized(true);
+  }, [dbState, isLoading, userId, isInitialized, isError, saveMutation, triggerWeeklyReset]);
 
   const totalSpent = useMemo(() => {
     return modules.reduce((moduleAcc, module) => {
@@ -284,39 +342,11 @@ export const useBudgetState = () => {
   }, [modules, userId, saveMutation]);
 
 
+  // Expose the manual reset function, now using the internal logic
   const handleMondayReset = useCallback(() => {
-    if (!userId) return;
-
-    // Calculate remaining budget based on the ACTIVE TOKEN BUDGET, not the total weekly budget.
-    const remainingActiveBudget = TOTAL_TOKEN_BUDGET - totalSpent;
-    
-    let newGearTravelFund = gearTravelFund;
-
-    if (remainingActiveBudget > 0) {
-      const surplus = remainingActiveBudget;
-      newGearTravelFund += surplus;
-      showSuccess(`Weekly surplus of ${formatCurrency(surplus)} swept to Gear/Travel Fund!`);
-    } else if (remainingActiveBudget < 0) {
-      const deficit = Math.abs(remainingActiveBudget);
-      showError(`Overspent active budget by ${formatCurrency(deficit)}. This deficit would be subtracted from next week's budget.`);
-      // NOTE: For V1, we don't implement deficit subtraction logic, just the notification.
-    } else {
-        showSuccess("Active budget perfectly balanced. No surplus or deficit.");
-    }
-
-    // Reset tokens to initial state
-    const resetModules = initialModules;
-    setModules(resetModules);
-    setGearTravelFund(newGearTravelFund);
-
-    // Save the reset state to the database
-    saveMutation.mutate({
-      user_id: userId,
-      current_tokens: resetModules,
-      gear_travel_fund: newGearTravelFund,
-      last_reset_date: new Date().toISOString().split('T')[0],
-    });
-  }, [totalSpent, gearTravelFund, userId, saveMutation]);
+    // Use current local state for reset calculation
+    triggerWeeklyReset(modules, gearTravelFund);
+  }, [modules, gearTravelFund, triggerWeeklyReset]);
 
   const handleFundAdjustment = useCallback((newFundValue: number) => {
     if (!userId) return;
@@ -337,7 +367,7 @@ export const useBudgetState = () => {
     isLoading: isLoading || saveMutation.isPending || !isInitialized,
     isError,
     handleTokenSpend,
-    handleGenericSpend, // Export the new handler
+    handleGenericSpend,
     handleCustomSpend,
     handleMondayReset,
     handleFundAdjustment,
