@@ -19,7 +19,7 @@ const QuickSpendButtons: React.FC = () => {
 
   return (
     <div className="mb-8 p-4 bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-800">
-      <h2 className="text-lg font-semibold text-indigo-800 dark:text-indigo-300 mb-3">
+      <h2 className="text-xl font-extrabold text-indigo-800 dark:text-indigo-300 mb-4 text-center">
         Quick Log (Generic Spend)
       </h2>
       <div className="flex flex-wrap justify-center gap-3">
@@ -31,13 +31,13 @@ const QuickSpendButtons: React.FC = () => {
               key={amount}
               onClick={() => handleSpend(amount)}
               className={cn(
-                "h-12 w-16 rounded-xl font-bold text-base transition-all duration-200 shadow-md",
+                "h-14 w-20 rounded-xl font-extrabold text-lg transition-all duration-200 shadow-lg active:scale-[0.95]",
                 isOverBudget
-                  ? "bg-red-500 text-white hover:bg-red-600 border-2 border-red-600"
-                  : "bg-green-500 text-white hover:bg-green-600 border-2 border-green-600",
+                  ? "bg-red-600 text-white hover:bg-red-700 border-2 border-red-700 shadow-red-400/50"
+                  : "bg-green-600 text-white hover:bg-green-700 border-2 border-green-700 shadow-green-400/50",
                 "dark:shadow-none dark:border-2",
-                isOverBudget && "dark:bg-red-700 dark:hover:bg-red-600 dark:border-red-500",
-                !isOverBudget && "dark:bg-green-700 dark:hover:bg-green-600 dark:border-green-500"
+                isOverBudget && "dark:bg-red-800 dark:hover:bg-red-700 dark:border-red-600",
+                !isOverBudget && "dark:bg-green-800 dark:hover:bg-green-700 dark:border-green-600"
               )}
             >
               {formatCurrency(amount).replace('A$', '$')}

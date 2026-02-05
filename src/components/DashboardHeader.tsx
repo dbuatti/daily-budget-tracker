@@ -69,7 +69,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ totalSpent, gearTrave
           <StyledProgress 
             value={progressValue} 
             className="mt-3 h-3 bg-gray-200 dark:bg-gray-800" 
-            indicatorClassName={deficit > 0 ? "bg-red-500 shadow-md shadow-red-300/50" : "bg-green-500 shadow-md shadow-green-300/50"}
+            indicatorClassName={deficit > 0 ? "bg-red-500 shadow-lg shadow-red-400/70" : "bg-green-500 shadow-lg shadow-green-400/70"}
           />
         </CardContent>
       </Card>
@@ -92,7 +92,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ totalSpent, gearTrave
           <StyledProgress 
             value={savingsProgress} 
             className="mt-3 h-3 bg-yellow-200 dark:bg-yellow-800" 
-            indicatorClassName="bg-yellow-500 shadow-md shadow-yellow-300/50"
+            indicatorClassName="bg-yellow-500 shadow-lg shadow-yellow-400/70"
           />
         </CardContent>
       </Card>

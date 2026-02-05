@@ -30,10 +30,10 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) =
   return (
     <Card className="rounded-2xl shadow-xl border-2 border-indigo-200 dark:border-indigo-800/70 transition-all hover:shadow-2xl bg-white dark:bg-gray-900/50">
       <CardHeader className="pb-3 border-b border-indigo-100 dark:border-indigo-900/50">
-        <CardTitle className="text-xl font-bold text-indigo-800 dark:text-indigo-300 flex justify-between items-center">
+        <CardTitle className="text-xl font-bold text-indigo-800 dark:text-indigo-300 flex justify-between items-center mb-1">
           <span>{category.name}</span>
           <span className={
-            `text-base font-extrabold ${currentStatus < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`
+            `text-lg font-extrabold ${currentStatus < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`
           }>
             {formatCurrency(currentStatus)}
           </span>
