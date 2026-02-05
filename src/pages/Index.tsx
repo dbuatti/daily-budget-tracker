@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useBudgetState } from '@/hooks/useBudgetState';
 import ModuleSection from '@/components/ModuleSection';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import RLSDebugPanel from '@/components/RLSDebugPanel';
 
 const LogTransaction = () => {
-  const { modules, isLoading, handleTokenSpend, resetBriefing, clearBriefing, spentToday, isLoading: isStateLoading } = useBudgetState();
+  const { modules, isLoading, handleTokenSpend, resetBriefing, clearBriefing, spentToday, isLoading: isStateLoading, totalSpent: totalSpentWeekly } = useBudgetState();
   
   // State for raw transactions debug panel
   const [rawTransactions, setRawTransactions] = React.useState<any[]>([]);
@@ -58,22 +58,64 @@ const LogTransaction = () => {
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
-      <h1 className="text-4xl font-extrabold text-center mb-4 text-indigo-900 dark:text-indigo-200">
+      <h1 className="text-4xl font-extrabold text-center mb-8 text-indigo-900 dark:text-indigo-200">
         Log Transaction
       </h1>
       
-      {/* New Spent Today Display */}
-      <div className="mb-8 p-4 bg-indigo-600 dark:bg-indigo-800 rounded-2xl shadow-2xl text-white text-center">
-        <p className="text-sm font-medium opacity-80 uppercase tracking-wider">
-          Total Spent Today (from hook: {isStateLoading ? 'loading' : 'loaded'})
-        </p>
-        <p className="text-5xl font-extrabold mt-1">
-          {formatCurrency(spentToday).replace('A$', '$')}
-        </p>
-      </div>
-      
-      <QuickSpendButtons />
+      {/* Two Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        {/* Left Column - Daily Spend */}
+        <div className="space-y-6">
+          <div className="p-6 bg-indigo-600 dark:bg-indigo-800 rounded-2xl shadow-2xl text-white text-center">
+            <p className="text-sm font-medium opacity-80 uppercase tracking-wider">
+              Today's Spend
+            </p>
+            <p className="text-5xl font-extrabold mt-2">
+              {formatCurrency(spentToday).replace('A$', '$')}
+            </p>
+          </div>
+          
+          <QuickSpendButtons />
+        </div>
 
+        {/* Right Column - Weekly Total */}
+        <div className="space-y-6">
+          <div className="p-6 bg-indigo-100 dark:bg-indigo-900/50 rounded-2xl shadow-xl border-2 border-indigo-300 dark:border-indigo-700 text-center">
+            <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">
+              Weekly Total
+            </p>
+            <p className="text-5xl font-extrabold mt-2 text-indigo-900 dark:text-white">
+              {formatCurrency(totalSpentWeekly).replace('A$', '$')}
+            </p>
+            <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-2">
+              out of {formatCurrency(382.00).replace('A$', '$')} token budget
+            </p>
+          </div>
+
+          {/* Simple weekly progress visualization */}
+          <div className="p-4 bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-800">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Weekly Progress</h3>
+            <div className="relative pt-1">
+              <div className="flex mb-2 items-center justify-between">
+                <span className="text-xs font-semibold inline-block text-indigo-600 dark:text-indigo-400">
+                  {Math.round((totalSpentWeekly / 382.00) * 100)}% Used
+                </span>
+                <span className="text-xs font-semibold inline-block text-gray-600 dark:text-gray-400">
+                  {formatCurrency(382.00 - totalSpentWeekly).replace('A$', '$')} remaining
+                </span>
+              </div>
+              <div className="overflow-hidden h-3 mb-4 text-xs flex rounded bg-gray-200 dark:bg-gray-800">
+                <div 
+                  style={{ width: `${Math.min(100, (totalSpentWeekly / 382.00) * 100)}%` }}
+                  className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-indigo-600 dark:bg-indigo-500 transition-all duration-500"
+                ></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Module Sections - Full Width Below */}
       <div className="space-y-8">
         {visibleModules.map((module) => (
           <ModuleSection
