@@ -1,7 +1,8 @@
 import React from 'react';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { format, utcToZonedTime, startOfDay, addHours } from 'date-fns-tz';
+import { format, toZonedTime } from 'date-fns-tz';
+import { startOfDay, addHours } from 'date-fns';
 import { Loader2, Clock, Calendar, Globe } from 'lucide-react';
 
 const TimeDebugInfo: React.FC = () => {
@@ -27,13 +28,13 @@ const TimeDebugInfo: React.FC = () => {
 
   // 3. User's Daily Rollover Start Time
   // Get the start of the day in the user's timezone
-  const startOfUserDay = startOfDay(utcToZonedTime(now, userTimezone), { timeZone: userTimezone });
+  const startOfUserDay = startOfDay(toZonedTime(now, userTimezone));
   // Add the rollover hour
   const rolloverStart = addHours(startOfUserDay, rolloverHour);
   
   // If the current time is before the rollover hour, the "day" started yesterday.
   // We need to check if the current time in the user's timezone is before the rollover time today.
-  const nowInUserTZ = utcToZonedTime(now, userTimezone);
+  const nowInUserTZ = toZonedTime(now, userTimezone);
   let effectiveRolloverStart = rolloverStart;
   
   // If the current time is before the rollover time, the budget day started yesterday.
