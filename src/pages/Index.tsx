@@ -3,7 +3,6 @@ import { useBudgetState } from '@/hooks/useBudgetState';
 import ModuleSection from '@/components/ModuleSection';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
 import MondayBriefingDialog from '@/components/MondayBriefingDialog';
-import TimeDebugInfo from '@/components/TimeDebugInfo';
 import { Loader2 } from 'lucide-react';
 import { GENERIC_MODULE_ID } from '@/data/budgetData';
 import { formatCurrency } from '@/lib/format';
@@ -61,9 +60,6 @@ const LogTransaction = () => {
       <h1 className="text-4xl font-extrabold text-center mb-4 text-indigo-900 dark:text-indigo-200">
         Log Transaction
       </h1>
-      
-      {/* Time Debug Info */}
-      <TimeDebugInfo />
       
       {/* New Spent Today Display */}
       <div className="mb-8 p-4 bg-indigo-600 dark:bg-indigo-800 rounded-2xl shadow-2xl text-white text-center">
