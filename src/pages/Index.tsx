@@ -5,9 +5,10 @@ import QuickSpendButtons from '@/components/QuickSpendButtons';
 import MondayBriefingDialog from '@/components/MondayBriefingDialog';
 import { Loader2 } from 'lucide-react';
 import { GENERIC_MODULE_ID } from '@/data/budgetData';
+import { formatCurrency } from '@/lib/format';
 
 const LogTransaction = () => {
-  const { modules, isLoading, handleTokenSpend, resetBriefing, clearBriefing } = useBudgetState();
+  const { modules, isLoading, handleTokenSpend, resetBriefing, clearBriefing, totalSpent } = useBudgetState();
 
   if (isLoading) {
     return (
@@ -22,9 +23,19 @@ const LogTransaction = () => {
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
-      <h1 className="text-4xl font-extrabold text-center mb-8 text-indigo-900 dark:text-indigo-200">
+      <h1 className="text-4xl font-extrabold text-center mb-4 text-indigo-900 dark:text-indigo-200">
         Log Transaction
       </h1>
+      
+      {/* New Spent Today Display */}
+      <div className="mb-8 p-4 bg-indigo-600 dark:bg-indigo-800 rounded-2xl shadow-2xl text-white text-center">
+        <p className="text-sm font-medium opacity-80 uppercase tracking-wider">
+          Total Spent This Week
+        </p>
+        <p className="text-5xl font-extrabold mt-1">
+          {formatCurrency(totalSpent).replace('A$', '$')}
+        </p>
+      </div>
       
       <QuickSpendButtons />
 
