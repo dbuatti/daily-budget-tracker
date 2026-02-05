@@ -16,6 +16,7 @@ const newModules: Module[] = [
           { id: 'A1-1', value: 20, spent: false },
           { id: 'A1-2', value: 30, spent: false },
         ],
+        baseValue: 70,
       },
       {
         id: 'A2',
@@ -25,6 +26,7 @@ const newModules: Module[] = [
           { id: 'A2-1', value: 15, spent: false },
           { id: 'A2-2', value: 15, spent: false },
         ],
+        baseValue: 45,
       },
       {
         id: 'A3',
@@ -34,6 +36,7 @@ const newModules: Module[] = [
           { id: 'A3-1', value: 5, spent: false },
           { id: 'A3-2', value: 5, spent: false },
         ],
+        baseValue: 15,
       },
       {
         id: 'A4',
@@ -41,6 +44,7 @@ const newModules: Module[] = [
         tokens: [
           { id: 'A4-0', value: 5, spent: false },
         ],
+        baseValue: 5,
       },
     ],
   },
@@ -55,6 +59,7 @@ const newModules: Module[] = [
           { id: 'B1-0', value: 10, spent: false },
           { id: 'B1-1', value: 10, spent: false },
         ],
+        baseValue: 20,
       },
       {
         id: 'B2',
@@ -62,6 +67,7 @@ const newModules: Module[] = [
         tokens: [
           { id: 'B2-0', value: 5, spent: false },
         ],
+        baseValue: 5,
       },
     ],
   },
@@ -77,6 +83,7 @@ const newModules: Module[] = [
           { id: 'C1-1', value: 5, spent: false },
           { id: 'C1-2', value: 5, spent: false },
         ],
+        baseValue: 15,
       },
       {
         id: 'C2',
@@ -84,6 +91,7 @@ const newModules: Module[] = [
         tokens: [
           { id: 'C2-0', value: 5, spent: false },
         ],
+        baseValue: 5,
       },
     ],
   },
@@ -97,6 +105,7 @@ const newModules: Module[] = [
         tokens: [
           { id: 'D1-0', value: 30, spent: false },
         ],
+        baseValue: 30,
       },
       {
         id: 'D2',
@@ -105,6 +114,7 @@ const newModules: Module[] = [
           { id: 'D2-0', value: 10, spent: false },
           { id: 'D2-1', value: 10, spent: false },
         ],
+        baseValue: 20,
       },
     ],
   },
@@ -120,6 +130,7 @@ const newModules: Module[] = [
           { id: 'E1-1', value: 10, spent: false },
           { id: 'E1-2', value: 10, spent: false },
         ],
+        baseValue: 30,
       },
       {
         id: 'E2',
@@ -127,6 +138,7 @@ const newModules: Module[] = [
         tokens: [
           { id: 'E2-0', value: 10, spent: false },
         ],
+        baseValue: 10,
       },
     ],
   },
@@ -141,6 +153,7 @@ const newModules: Module[] = [
           { id: 'F1-0', value: 10, spent: false },
           { id: 'F1-1', value: 10, spent: false },
         ],
+        baseValue: 20,
       },
       {
         id: 'F2',
@@ -148,6 +161,7 @@ const newModules: Module[] = [
         tokens: [
           { id: 'F2-0', value: 10, spent: false },
         ],
+        baseValue: 10,
       },
     ],
   },
