@@ -8,6 +8,7 @@ export interface Category {
   id: string;
   name: string;
   tokens: Token[];
+  baseValue: number; // New field: The original weekly budget for this category
 }
 
 export interface Module {

@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useBudgetState } from '@/hooks/useBudgetState';
 import ModuleSection from '@/components/ModuleSection';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
+import MondayBriefingDialog from '@/components/MondayBriefingDialog';
 import { Loader2 } from 'lucide-react';
 import { GENERIC_MODULE_ID } from '@/data/budgetData';
 
 const LogTransaction = () => {
-  const { modules, isLoading, handleTokenSpend } = useBudgetState();
+  const { modules, isLoading, handleTokenSpend, resetBriefing, clearBriefing } = useBudgetState();
 
   if (isLoading) {
     return (
@@ -36,6 +37,15 @@ const LogTransaction = () => {
           />
         ))}
       </div>
+
+      {/* Monday Morning Briefing Dialog */}
+      {resetBriefing && (
+        <MondayBriefingDialog
+          isOpen={!!resetBriefing}
+          onClose={clearBriefing}
+          {...resetBriefing}
+        />
+      )}
     </div>
   );
 };

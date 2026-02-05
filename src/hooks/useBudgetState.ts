@@ -3,24 +3,43 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useSession } from '@/contexts/SessionContext';
 import { initialModules, WEEKLY_BUDGET_TOTAL, TOTAL_TOKEN_BUDGET, GENERIC_MODULE_ID, GENERIC_CATEGORY_ID } from '@/data/budgetData';
-import { Module, Token } from '@/types/budget';
+import { Module, Token, Category } from '@/types/budget';
 import { WeeklyBudgetState } from '@/types/supabase';
 import { showSuccess, showError } from '@/utils/toast';
 import { formatCurrency } from '@/lib/format';
-import { isToday, parseISO, isBefore, startOfWeek, isSameDay } from 'date-fns';
+import { isBefore, startOfWeek } from 'date-fns';
 
 const TABLE_NAME = 'weekly_budget_state';
 
+// --- Briefing Types ---
+interface BriefingItem {
+  categoryName: string;
+  difference: number; // Positive for surplus, Negative for deficit
+  newBaseValue?: number;
+}
+
+interface ResetBriefing {
+  totalSpent: number;
+  totalBudget: number;
+  totalSurplus: number;
+  totalDeficit: number;
+  newGearTravelFund: number;
+  categoryBriefings: BriefingItem[];
+}
+// ----------------------
+
 // Helper to determine if a weekly reset is due (assuming week starts on Monday)
 const isResetDue = (lastResetDate: string): boolean => {
-  const lastReset = parseISO(lastResetDate);
+  const lastReset = new Date(lastResetDate);
   const today = new Date();
   
   // Define the start of the current week (Monday, weekStartsOn: 1)
   const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 }); 
 
-  // A reset is due if the last reset date was before the start of the current week.
-  return isBefore(lastReset, startOfCurrentWeek);
+  // We compare the start of the week of the last reset date vs the start of the current week.
+  const startOfLastResetWeek = startOfWeek(lastReset, { weekStartsOn: 1 });
+
+  return isBefore(startOfLastResetWeek, startOfCurrentWeek);
 };
 
 const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState | null> => {
@@ -31,12 +50,10 @@ const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState | nul
     .single();
 
   if (error && error.code !== 'PGRST116') { // PGRST116 means "No rows found"
-    // If we get an error other than "No rows found", we throw it.
     throw new Error(error.message);
   }
   
   if (data) {
-    // Ensure types are correct when returning
     return {
       ...data,
       current_tokens: data.current_tokens as Module[],
@@ -56,6 +73,39 @@ const upsertBudgetState = async (state: Partial<WeeklyBudgetState> & { user_id: 
   }
 };
 
+// Helper to calculate total spent in a category
+const calculateCategorySpent = (category: Category): number => {
+    return category.tokens
+        .filter(t => t.spent)
+        .reduce((sum, token) => sum + token.value, 0);
+};
+
+// Helper to generate a new set of tokens for a category based on a new base value
+const generateNewTokens = (categoryId: string, newBaseValue: number): Token[] => {
+    // For simplicity, we will generate a single token representing the new base value.
+    if (newBaseValue <= 0) {
+        return [{ id: `${categoryId}-0`, value: 0, spent: false }];
+    }
+    
+    // Find the initial token values for this category to try and maintain structure
+    const initialModule = initialModules.find(m => m.categories.some(c => c.id === categoryId));
+    const initialCategory = initialModule?.categories.find(c => c.id === categoryId);
+
+    if (initialCategory && initialCategory.tokens.length > 0) {
+        // If the new base value matches the original base value, return the original tokens
+        if (newBaseValue === initialCategory.baseValue) {
+            return initialCategory.tokens.map(t => ({ ...t, spent: false }));
+        }
+        
+        // If the new base value is different, we simplify it to one token for the adjusted amount
+        return [{ id: `${categoryId}-0`, value: newBaseValue, spent: false }];
+    }
+
+    // Fallback for categories not found or generic ones
+    return [{ id: `${categoryId}-0`, value: newBaseValue, spent: false }];
+};
+
+
 export const useBudgetState = () => {
   const { user } = useSession();
   const userId = user?.id;
@@ -66,10 +116,7 @@ export const useBudgetState = () => {
     queryKey: [TABLE_NAME, userId],
     queryFn: () => fetchBudgetState(userId!),
     enabled: !!userId,
-    // Prevent retries on 404 errors which indicate missing table/endpoint
     retry: (failureCount, error) => {
-      // Check if error message indicates a 404 or missing table (Supabase error messages can be vague)
-      // We will allow retries up to 3 times unless it's a persistent error.
       if (failureCount >= 3) return false;
       return true;
     }
@@ -79,6 +126,8 @@ export const useBudgetState = () => {
   const [modules, setModules] = useState<Module[]>(initialModules);
   const [gearTravelFund, setGearTravelFund] = useState<number>(0);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [resetBriefing, setResetBriefing] = useState<ResetBriefing | null>(null);
+
 
   // Mutation for saving state changes
   const saveMutation = useMutation({
@@ -91,42 +140,103 @@ export const useBudgetState = () => {
     }
   });
 
-  // Function to perform the weekly reset logic
-  const triggerWeeklyReset = useCallback((currentModules: Module[], currentFund: number) => {
+  // Function to perform the weekly reset logic (Asymmetric Rollover)
+  const triggerWeeklyReset = useCallback((oldModules: Module[], currentFund: number, isManual: boolean = false) => {
     if (!userId) return;
 
-    // Calculate total spent based on the provided modules (which should be the old state)
-    const totalSpentInOldWeek = currentModules.reduce((moduleAcc, module) => {
-      return moduleAcc + module.categories.reduce((catAcc, category) => {
-        return catAcc + category.tokens.filter(t => t.spent).reduce((tokenAcc, token) => tokenAcc + token.value, 0);
-      }, 0);
-    }, 0);
-
-    // Calculate remaining budget based on the ACTIVE TOKEN BUDGET
-    const remainingActiveBudget = TOTAL_TOKEN_BUDGET - totalSpentInOldWeek;
-    
     let newGearTravelFund = currentFund;
+    let totalSurplus = 0;
+    let totalDeficit = 0;
+    let totalSpentInOldWeek = 0;
+    
+    const categoryBriefings: BriefingItem[] = [];
 
-    if (remainingActiveBudget > 0) {
-      const surplus = remainingActiveBudget;
-      newGearTravelFund += surplus;
-      showSuccess(`Weekly surplus of ${formatCurrency(surplus)} swept to Gear/Travel Fund!`);
-    } else if (remainingActiveBudget < 0) {
-      const deficit = Math.abs(remainingActiveBudget);
-      showError(`Overspent active budget by ${formatCurrency(deficit)}. This deficit would be subtracted from next week's budget.`);
-    } else {
-        showSuccess("Active budget perfectly balanced. No surplus or deficit.");
+    const resetModules: Module[] = initialModules.map(module => ({
+        ...module,
+        categories: module.categories.map(initialCategory => {
+            // 1. Find the corresponding category in the old state
+            const oldCategory = oldModules
+                .flatMap(m => m.categories)
+                .find(c => c.id === initialCategory.id);
+
+            // If the category didn't exist in the old state (e.g., generic spend), use initial state
+            if (!oldCategory) {
+                return initialCategory;
+            }
+
+            // 2. Calculate spent vs base value
+            const spent = calculateCategorySpent(oldCategory);
+            totalSpentInOldWeek += spent;
+            
+            const baseValue = initialCategory.baseValue; // Use the base value from initialModules
+            const difference = baseValue - spent; // Positive = surplus, Negative = deficit
+
+            let newCategory: Category = { ...initialCategory };
+
+            if (difference > 0) {
+                // Underspent (Surplus) - Vaulting Method
+                totalSurplus += difference;
+                // Next week's budget remains the base value (initialCategory)
+                newCategory = initialCategory;
+                categoryBriefings.push({ categoryName: initialCategory.name, difference });
+            } else if (difference < 0) {
+                // Overspent (Deficit) - Asymmetric Rollover
+                const deficit = Math.abs(difference);
+                totalDeficit += deficit;
+                
+                // Calculate the new base value for next week
+                const newBaseValue = Math.max(0, baseValue - deficit);
+                
+                // Create a new category structure with the adjusted tokens
+                newCategory = {
+                    ...initialCategory,
+                    tokens: generateNewTokens(initialCategory.id, newBaseValue),
+                };
+                
+                categoryBriefings.push({ categoryName: initialCategory.name, difference, newBaseValue });
+            } else {
+                // Perfectly balanced
+                newCategory = initialCategory;
+            }
+            
+            return newCategory;
+        }),
+    }));
+
+    // Handle Generic Spend Module (ID: Z) - This module is purely tracking, no rollover logic needed.
+    const genericModule = oldModules.find(m => m.id === GENERIC_MODULE_ID);
+    if (genericModule) {
+        totalSpentInOldWeek += genericModule.categories.reduce((acc, cat) => acc + calculateCategorySpent(cat), 0);
     }
 
-    // Reset tokens to initial state
-    const resetModules = initialModules;
-    setModules(resetModules);
+    // Filter out the generic module from the new week's budget.
+    const finalModules = resetModules.filter(m => m.id !== GENERIC_MODULE_ID);
+
+    // Apply surplus to the Gear/Travel Fund
+    if (totalSurplus > 0) {
+      newGearTravelFund += totalSurplus;
+      if (!isManual) {
+        showSuccess(`Weekly surplus of ${formatCurrency(totalSurplus)} swept to Gear/Travel Fund!`);
+      }
+    }
+    
+    // Set the briefing state for the UI
+    setResetBriefing({
+        totalSpent: totalSpentInOldWeek,
+        totalBudget: TOTAL_TOKEN_BUDGET,
+        totalSurplus,
+        totalDeficit,
+        newGearTravelFund,
+        categoryBriefings: categoryBriefings.filter(b => b.difference !== 0),
+    });
+
+    setModules(finalModules);
     setGearTravelFund(newGearTravelFund);
 
     // Save the reset state to the database
     saveMutation.mutate({
       user_id: userId,
-      current_tokens: resetModules,
+      current_tokens: finalModules,
       gear_travel_fund: newGearTravelFund,
       last_reset_date: new Date().toISOString().split('T')[0],
     });
@@ -135,7 +245,6 @@ export const useBudgetState = () => {
 
   // Initialize state from DB or defaults, and check for automatic reset
   useEffect(() => {
-    // Only proceed if not loading and we have a user ID
     if (isLoading || !userId || isInitialized) return;
 
     if (isError) {
@@ -184,7 +293,7 @@ export const useBudgetState = () => {
   const totalSpent = useMemo(() => {
     return modules.reduce((moduleAcc, module) => {
       return moduleAcc + module.categories.reduce((catAcc, category) => {
-        return catAcc + category.tokens.filter(t => t.spent).reduce((tokenAcc, token) => tokenAcc + token.value, 0);
+        return catAcc + calculateCategorySpent(category);
       }, 0);
     }, 0);
   }, [modules]);
@@ -310,6 +419,7 @@ export const useBudgetState = () => {
                 id: GENERIC_CATEGORY_ID,
                 name: "Generic Spend",
                 tokens: [newSpentToken],
+                baseValue: 0, // Generic spend has no base budget
               }],
             };
           }
@@ -325,6 +435,7 @@ export const useBudgetState = () => {
           id: GENERIC_CATEGORY_ID,
           name: "Generic Spend",
           tokens: [newSpentToken],
+          baseValue: 0, // Generic spend has no base budget
         }],
       };
       newModules = [genericModule, ...modules];
@@ -344,8 +455,8 @@ export const useBudgetState = () => {
 
   // Expose the manual reset function, now using the internal logic
   const handleMondayReset = useCallback(() => {
-    // Use current local state for reset calculation
-    triggerWeeklyReset(modules, gearTravelFund);
+    // Use current local state for reset calculation, explicitly marking as manual
+    triggerWeeklyReset(modules, gearTravelFund, true);
   }, [modules, gearTravelFund, triggerWeeklyReset]);
 
   const handleFundAdjustment = useCallback((newFundValue: number) => {
@@ -359,6 +470,10 @@ export const useBudgetState = () => {
       gear_travel_fund: newFundValue,
     });
   }, [userId, saveMutation]);
+  
+  const clearBriefing = useCallback(() => {
+    setResetBriefing(null);
+  }, []);
 
   return {
     modules,
@@ -366,6 +481,8 @@ export const useBudgetState = () => {
     totalSpent,
     isLoading: isLoading || saveMutation.isPending || !isInitialized,
     isError,
+    resetBriefing,
+    clearBriefing,
     handleTokenSpend,
     handleGenericSpend,
     handleCustomSpend,

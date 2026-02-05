@@ -14,10 +14,8 @@ interface CategoryCardProps {
 const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) => {
   const { handleCustomSpend } = useBudgetState();
   
-  // 1. Calculate the initial budget (sum of predefined tokens)
-  const initialBudget = category.tokens
-    .filter(t => t.id.startsWith(category.id) && !t.id.startsWith('custom-'))
-    .reduce((sum, token) => sum + token.value, 0);
+  // 1. The initial budget is now stored directly in baseValue
+  const initialBudget = category.baseValue;
 
   // 2. Calculate the total amount spent in this category (predefined tokens + custom spends)
   const totalSpentInThisCategory = category.tokens
@@ -25,6 +23,8 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) =
     .reduce((sum, token) => sum + token.value, 0);
 
   // 3. Calculate the current status (Remaining = Initial Budget - Total Spent)
+  // Note: This calculation correctly reflects the budget status against the base value, 
+  // even if custom spends push the total spent above the base value.
   const currentStatus = initialBudget - totalSpentInThisCategory;
 
   return (

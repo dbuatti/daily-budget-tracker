@@ -1,4 +1,4 @@
-import { Module, Token } from "@/types/budget";
+import { Module, Token, Category } from "@/types/budget";
 
 // Helper to create tokens easily
 const createTokens = (baseId: string, values: number[]): Token[] =>
@@ -7,6 +7,13 @@ const createTokens = (baseId: string, values: number[]): Token[] =>
     value,
     spent: false,
   }));
+
+// Helper to create a category and calculate its base value
+const createCategory = (id: string, name: string, tokenValues: number[]): Category => {
+    const tokens = createTokens(id, tokenValues);
+    const baseValue = tokens.reduce((sum, token) => sum + token.value, 0);
+    return { id, name, tokens, baseValue };
+};
 
 export const WEEKLY_BUDGET_TOTAL = 649.00;
 
@@ -30,122 +37,53 @@ export const initialModules: Module[] = [
     id: "A",
     name: "Daily Essentials",
     categories: [
-      {
-        id: "A1",
-        name: "Groceries",
-        tokens: createTokens("A1", [20, 20, 30]), // $70.00
-      },
-      {
-        id: "A2",
-        name: "Meals Out",
-        tokens: createTokens("A2", [15, 15, 15, 17.5]), // $62.50
-      },
-      {
-        id: "A3",
-        name: "Coffee",
-        tokens: createTokens("A3", [5, 5, 5, 5, 5, 5]), // $30.00
-      },
-      {
-        id: "A4",
-        name: "Drinks / Treats",
-        tokens: createTokens("A4", [3, 3, 4]), // $10.00
-      },
+      createCategory("A1", "Groceries", [20, 20, 30]), // $70.00
+      createCategory("A2", "Meals Out", [15, 15, 15, 17.5]), // $62.50
+      createCategory("A3", "Coffee", [5, 5, 5, 5, 5, 5]), // $30.00
+      createCategory("A4", "Drinks / Treats", [3, 3, 4]), // $10.00
     ],
   },
   {
     id: "B",
     name: "Transport & Car",
     categories: [
-      {
-        id: "B1",
-        name: "Myki / Public Transport",
-        tokens: createTokens("B1", [10, 10]), // $20.00
-      },
-      {
-        id: "B2",
-        name: "Tolls & Parking",
-        tokens: createTokens("B2", [5]), // $5.00
-      },
-      {
-        id: "B3",
-        name: "Fuel",
-        tokens: createTokens("B3", [10, 10]), // $20.00 (Based on $18.15 average)
-      },
+      createCategory("B1", "Myki / Public Transport", [10, 10]), // $20.00
+      createCategory("B2", "Tolls & Parking", [5]), // $5.00
+      createCategory("B3", "Fuel", [10, 10]), // $20.00 (Based on $18.15 average)
     ],
   },
   {
     id: "C",
     name: "Home & Misc",
     categories: [
-      {
-        id: "C1",
-        name: "Household Items",
-        tokens: createTokens("C1", [5, 5, 5, 5, 5]), // $25.00
-      },
-      {
-        id: "C2",
-        name: "Misc Expenses",
-        tokens: createTokens("C2", [10, 10]), // Increased to $20.00 (Based on $15-$20 suggestion)
-      },
+      createCategory("C1", "Household Items", [5, 5, 5, 5, 5]), // $25.00
+      createCategory("C2", "Misc Expenses", [10, 10]), // Increased to $20.00 (Based on $15-$20 suggestion)
     ],
   },
   {
     id: "D",
     name: "Health & Wellness",
     categories: [
-      {
-        id: "D1",
-        name: "Wellbeing/Yoga",
-        tokens: createTokens("D1", [30]), // $30.00
-      },
-      {
-        id: "D2",
-        name: "Medicine/Specialists",
-        tokens: createTokens("D2", [10, 10]), // Increased to $20.00 (Based on $16 average)
-      },
+      createCategory("D1", "Wellbeing/Yoga", [30]), // $30.00
+      createCategory("D2", "Medicine/Specialists", [10, 10]), // Increased to $20.00 (Based on $16 average)
     ],
   },
   {
     id: "E",
     name: "Professional & Music",
     categories: [
-      {
-        id: "E1",
-        name: "Technology",
-        tokens: createTokens("E1", [10, 10, 10, 10]), // $40.00
-      },
-      {
-        id:
-        "E2",
-        name: "Music Specific Gear",
-        tokens: createTokens("E2", [10]), // $10.00
-      },
-      {
-        id: "E3",
-        name: "Gig Prep",
-        tokens: createTokens("E3", [12.5]), // $12.50
-      },
+      createCategory("E1", "Technology", [10, 10, 10, 10]), // $40.00
+      createCategory("E2", "Music Specific Gear", [10]), // $10.00
+      createCategory("E3", "Gig Prep", [12.5]), // $12.50
     ],
   },
   {
     id: "F",
     name: "Buffers & Fun",
     categories: [
-      {
-        id: "F1",
-        name: "Shopping",
-        tokens: createTokens("F1", [10, 10]), // $20.00 (Increased from $10)
-      },
-      {
-        id: "F2",
-        name: "Personal Projects",
-        tokens: createTokens("F2", [10]), // $10.00
-      },
-      {
-        id: "F3",
-        name: "Fun & Recreation",
-        tokens: createTokens("F3", [10]), // $10.00
-      },
+      createCategory("F1", "Shopping", [10, 10]), // $20.00 (Increased from $10)
+      createCategory("F2", "Personal Projects", [10]), // $10.00
+      createCategory("F3", "Fun & Recreation", [10]), // $10.00
     ],
   },
 ];
@@ -153,6 +91,6 @@ export const initialModules: Module[] = [
 // Calculate the total token budget for display purposes
 export const TOTAL_TOKEN_BUDGET = initialModules.reduce((moduleAcc, module) => {
     return moduleAcc + module.categories.reduce((catAcc, category) => {
-        return catAcc + category.tokens.reduce((tokenAcc, token) => tokenAcc + token.value, 0);
+        return catAcc + category.baseValue;
     }, 0);
 }, 0);
