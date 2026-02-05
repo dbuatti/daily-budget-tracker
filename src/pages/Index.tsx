@@ -4,13 +4,14 @@ import ModuleSection from '@/components/ModuleSection';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
 import MondayBriefingDialog from '@/components/MondayBriefingDialog';
 import { Loader2, Bug, RefreshCw, Terminal } from 'lucide-react';
-import { GENERIC_MODULE_ID, TOTAL_TOKEN_BUDGET } from '@/data/budgetData';
+import { GENERIC_MODULE_ID, TOTAL_TOKEN_BUDGET, WEEKLY_BUDGET_TOTAL } from '@/data/budgetData';
 import { formatCurrency } from '@/lib/format';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { toast } from 'sonner';
+import { useSession } from '@/contexts/SessionContext';
 
 const Index = () => {
   const { 
@@ -28,6 +29,7 @@ const Index = () => {
   } = useBudgetState();
 
   const { profile } = useUserProfile();
+  const { user } = useSession();
   const [debugMode, setDebugMode] = useState(false);
   const [showTimeDebug, setShowTimeDebug] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
@@ -46,13 +48,13 @@ const Index = () => {
 
   useEffect(() => {
     const fetchRawTransactions = async () => {
-      if (!profile) return;
+      if (!user) return;
       
       addLog('Fetching raw transactions...');
       const { data, error } = await supabase
         .from('budget_transactions')
         .select('*')
-        .eq('user_id', supabase.auth.getUser().data.user?.id)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(10);
 
@@ -65,14 +67,14 @@ const Index = () => {
     };
 
     fetchRawTransactions();
-  }, [profile, addLog]);
+  }, [user, profile, addLog]);
 
   const handleTestRpc = async () => {
-    if (!profile) return;
+    if (!user) return;
     
     addLog('Testing get_daily_spent_amount RPC...');
     const { data, error } = await supabase
-      .rpc('get_daily_spent_amount', { p_user_id: supabase.auth.getUser().data.user?.id });
+      .rpc('get_daily_spent_amount', { p_user_id: user.id });
 
     if (error) {
       addLog(`RPC Error: ${error.message}`);
