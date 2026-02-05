@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface SessionContextType {
   session: Session | null;
@@ -14,6 +15,7 @@ export const SessionContextProvider: React.FC<{ children: ReactNode }> = ({ chil
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -31,6 +33,39 @@ export const SessionContextProvider: React.FC<{ children: ReactNode }> = ({ chil
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Update user's timezone if not set, then refetch spentToday
+  useEffect(() => {
+    const updateUserTimezone = async () => {
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('timezone')
+          .eq('id', user.id)
+          .single();
+        
+        if (profile && !profile.timezone) {
+          const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          const { error } = await supabase
+            .from('profiles')
+            .update({ timezone: clientTimezone })
+            .eq('id', user.id);
+          
+          if (error) {
+            console.error('Failed to update timezone:', error);
+          } else {
+            console.log(`Updated user ${user.id} timezone to ${clientTimezone}`);
+            // Refetch spentToday with correct timezone
+            queryClient.invalidateQueries({ queryKey: ['spentToday', user.id] });
+          }
+        }
+      }
+    };
+
+    if (user) {
+      updateUserTimezone();
+    }
+  }, [user, queryClient]);
 
   return (
     <SessionContext.Provider value={{ session, user, isLoading }}>
