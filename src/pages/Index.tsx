@@ -1,22 +1,26 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useBudgetState } from '@/hooks/useBudgetState';
 import ModuleSection from '@/components/ModuleSection';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
 import MondayBriefingDialog from '@/components/MondayBriefingDialog';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Bug, RefreshCw } from 'lucide-react';
 import { GENERIC_MODULE_ID } from '@/data/budgetData';
 import { formatCurrency } from '@/lib/format';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import RLSDebugPanel from '@/components/RLSDebugPanel';
+import { useUserProfile } from '@/hooks/useUserProfile';
+import { getDayBoundaries } from '@/lib/time-utils';
 
 const LogTransaction = () => {
-  const { modules, isLoading, handleTokenSpend, resetBriefing, clearBriefing, spentToday, isLoading: isStateLoading, totalSpent: totalSpentWeekly } = useBudgetState();
+  const { modules, isLoading, handleTokenSpend, resetBriefing, clearBriefing, spentToday, isLoading: isStateLoading, totalSpent: totalSpentWeekly, refetchSpentToday } = useBudgetState();
+  const { profile } = useUserProfile();
   
   // State for raw transactions debug panel
   const [rawTransactions, setRawTransactions] = React.useState<any[]>([]);
   const [queryStatus, setQueryStatus] = React.useState<string>('idle');
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [isDebugLoading, setIsDebugLoading] = useState(false);
 
   const fetchRawTransactions = async () => {
     setQueryStatus('loading');
@@ -25,7 +29,7 @@ const LogTransaction = () => {
         .from('budget_transactions')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(20);
       
       if (error) {
         console.error('Error fetching raw transactions:', error);
@@ -38,6 +42,81 @@ const LogTransaction = () => {
     } catch (err) {
       console.error('Exception fetching raw transactions:', err);
       setQueryStatus('error');
+    }
+  };
+
+  const runDebugChecks = async () => {
+    setIsDebugLoading(true);
+    try {
+      const userId = supabase.auth.getUser().then(({ data }) => data.user?.id);
+      const user = await userId;
+      
+      if (!user) {
+        setDebugInfo({ error: 'Not authenticated' });
+        return;
+      }
+
+      // 1. Get user profile
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('timezone, day_rollover_hour')
+        .eq('id', user.id)
+        .single();
+
+      // 2. Calculate day boundaries
+      const today = new Date();
+      const boundaries = getDayBoundaries(user.id, today);
+      
+      // 3. Get all transactions for today based on calculated boundaries
+      const { data: todayTx, error: txError } = await supabase
+        .from('budget_transactions')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('created_at', boundaries.start_time)
+        .lt('created_at', boundaries.end_time)
+        .order('created_at', { ascending: false });
+
+      // 4. Get all transactions in a wider window (last 24 hours) to see if any exist
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const { data: last24hTx } = await supabase
+        .from('budget_transactions')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('created_at', twentyFourHoursAgo.toISOString())
+        .order('created_at', { ascending: false });
+
+      // 5. Call the RPC directly to see what it returns
+      const { data: rpcResult, error: rpcError } = await supabase
+        .rpc('get_daily_spent_amount', { p_user_id: user.id });
+
+      setDebugInfo({
+        userTimezone: profileData?.timezone || 'Not set',
+        dayRolloverHour: profileData?.day_rollover_hour || 0,
+        calculatedBoundaries: {
+          start: boundaries.start_time,
+          end: boundaries.end_time
+        },
+        todayTransactions: todayTx || [],
+        last24hTransactions: last24hTx || [],
+        rpcResult: rpcResult,
+        rpcError: rpcError?.message,
+        totalFromTodayTx: (todayTx || []).reduce((sum, tx) => sum + Number(tx.amount), 0),
+        totalFrom24hTx: (last24hTx || []).reduce((sum, tx) => sum + Number(tx.amount), 0)
+      });
+
+      console.log('Debug Info:', {
+        profile: profileData,
+        boundaries,
+        todayTx,
+        rpcResult,
+        rpcError
+      });
+
+    } catch (err) {
+      console.error('Debug error:', err);
+      setDebugInfo({ error: String(err) });
+    } finally {
+      setIsDebugLoading(false);
     }
   };
 
@@ -72,6 +151,9 @@ const LogTransaction = () => {
             </p>
             <p className="text-5xl font-extrabold mt-2">
               {formatCurrency(spentToday).replace('A$', '$')}
+            </p>
+            <p className="text-xs mt-2 opacity-70">
+              (from RPC: {formatCurrency(debugInfo?.rpcResult || 0).replace('A$', '$')})
             </p>
           </div>
           
@@ -135,69 +217,138 @@ const LogTransaction = () => {
         />
       )}
 
-      {/* DEBUG PANEL - Shows raw transactions and query status */}
-      <Card className="mt-8 rounded-2xl shadow-xl border-2 border-red-300 dark:border-red-700 bg-red-50/50 dark:bg-red-900/30">
+      {/* COMPREHENSIVE DEBUG PANEL */}
+      <Card className="mt-8 rounded-2xl shadow-xl border-2 border-orange-300 dark:border-orange-700 bg-orange-50/50 dark:bg-orange-900/30">
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg font-bold text-red-800 dark:text-red-300 flex items-center justify-between">
-            <span>🔬 Debug Panel - Raw Transactions</span>
-            <Button 
-              onClick={fetchRawTransactions} 
-              size="sm" 
-              variant="outline"
-              className="h-8 text-xs"
-            >
-              Refresh
-            </Button>
+          <CardTitle className="text-lg font-bold text-orange-800 dark:text-orange-300 flex items-center justify-between">
+            <span>🔬 Comprehensive Debug Panel</span>
+            <div className="flex gap-2">
+              <Button 
+                onClick={fetchRawTransactions} 
+                size="sm" 
+                variant="outline"
+                className="h-8 text-xs"
+              >
+                <RefreshCw className="w-3 h-3 mr-1" /> Refresh Tx
+              </Button>
+              <Button 
+                onClick={runDebugChecks} 
+                size="sm" 
+                variant="default"
+                className="h-8 text-xs bg-orange-600 hover:bg-orange-700"
+                disabled={isDebugLoading}
+              >
+                {isDebugLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bug className="w-3 h-3 mr-1" />}
+                Run Diagnostics
+              </Button>
+            </div>
           </CardTitle>
-          <p className="text-xs text-red-600 dark:text-red-400">
-            Query Status: {queryStatus} | Last fetch: {new Date().toLocaleTimeString()}
+          <p className="text-xs text-orange-600 dark:text-orange-400">
+            Debugging why daily spend shows 0
           </p>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-2 text-sm">
-            <p className="font-semibold text-red-800 dark:text-red-300">
-              Showing last 10 transactions from budget_transactions table:
-            </p>
-            {rawTransactions.length === 0 ? (
-              <p className="text-red-600 dark:text-red-400 italic">No transactions found in database.</p>
-            ) : (
-              <div className="overflow-x-auto">
+        <CardContent className="space-y-4">
+          {/* User Profile Info */}
+          <div className="p-3 bg-orange-100 dark:bg-orange-900/50 rounded-lg border border-orange-200 dark:border-orange-800">
+            <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">User Profile</h4>
+            <div className="text-xs space-y-1 text-orange-900 dark:text-orange-200">
+              <p><strong>Timezone:</strong> {profile?.timezone || 'Loading...'}</p>
+              <p><strong>Day Rollover Hour:</strong> {profile?.day_rollover_hour || 0}</p>
+              <p><strong>Client Timezone:</strong> {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+            </div>
+          </div>
+
+          {/* RPC Result */}
+          <div className="p-3 bg-orange-100 dark:bg-orange-900/50 rounded-lg border border-orange-200 dark:border-orange-800">
+            <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">RPC Result (get_daily_spent_amount)</h4>
+            <div className="text-xs space-y-1 text-orange-900 dark:text-orange-200">
+              <p><strong>Returned Value:</strong> {formatCurrency(debugInfo?.rpcResult || 0)}</p>
+              <p><strong>Error:</strong> {debugInfo?.rpcError || 'None'}</p>
+            </div>
+          </div>
+
+          {/* Day Boundaries */}
+          {debugInfo?.calculatedBoundaries && (
+            <div className="p-3 bg-orange-100 dark:bg-orange-900/50 rounded-lg border border-orange-200 dark:border-orange-800">
+              <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">Calculated Day Boundaries</h4>
+              <div className="text-xs space-y-1 text-orange-900 dark:text-orange-200">
+                <p><strong>Start:</strong> {new Date(debugInfo.calculatedBoundaries.start).toLocaleString()}</p>
+                <p><strong>End:</strong> {new Date(debugInfo.calculatedBoundaries.end).toLocaleString()}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Transaction Counts */}
+          <div className="p-3 bg-orange-100 dark:bg-orange-900/50 rounded-lg border border-orange-200 dark:border-orange-800">
+            <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">Transaction Analysis</h4>
+            <div className="text-xs space-y-1 text-orange-900 dark:text-orange-200">
+              <p><strong>Transactions in calculated day:</strong> {debugInfo?.todayTransactions?.length || 0}</p>
+              <p><strong>Transactions in last 24h:</strong> {debugInfo?.last24hTransactions?.length || 0}</p>
+              <p><strong>Sum from today's transactions:</strong> {formatCurrency(debugInfo?.totalFromTodayTx || 0)}</p>
+              <p><strong>Sum from last 24h:</strong> {formatCurrency(debugInfo?.totalFrom24hTx || 0)}</p>
+            </div>
+          </div>
+
+          {/* Recent Transactions Table */}
+          <div className="overflow-hidden rounded-lg border border-orange-200 dark:border-orange-800">
+            <div className="bg-orange-100 dark:bg-orange-900/50 p-2">
+              <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm">
+                Recent Transactions (All - Last 20)
+              </h4>
+            </div>
+            <div className="max-h-64 overflow-y-auto">
+              {rawTransactions.length === 0 ? (
+                <p className="p-3 text-xs text-orange-600 dark:text-orange-400 italic">No transactions found</p>
+              ) : (
                 <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-red-200 dark:border-red-800">
-                      <th className="text-left p-1">ID</th>
-                      <th className="text-left p-1">Amount</th>
-                      <th className="text-left p-1">Type</th>
-                      <th className="text-left p-1">Category</th>
-                      <th className="text-left p-1">Created At (UTC)</th>
+                  <thead className="bg-orange-50 dark:bg-orange-900/30 sticky top-0">
+                    <tr>
+                      <th className="text-left p-2 font-semibold text-orange-800 dark:text-orange-300">Amount</th>
+                      <th className="text-left p-2 font-semibold text-orange-800 dark:text-orange-300">Type</th>
+                      <th className="text-left p-2 font-semibold text-orange-800 dark:text-orange-300">Category</th>
+                      <th className="text-left p-2 font-semibold text-orange-800 dark:text-orange-300">Created (UTC)</th>
+                      <th className="text-left p-2 font-semibold text-orange-800 dark:text-orange-300">In Range?</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rawTransactions.map((tx) => (
-                      <tr key={tx.id} className="border-b border-red-100 dark:border-red-900/50">
-                        <td className="p-1 font-mono">{tx.id.slice(0, 8)}...</td>
-                        <td className="p-1 font-bold">{formatCurrency(tx.amount)}</td>
-                        <td className="p-1">{tx.transaction_type}</td>
-                        <td className="p-1">{tx.category_id || '—'}</td>
-                        <td className="p-1 font-mono text-gray-600 dark:text-gray-400">
-                          {new Date(tx.created_at).toISOString()}
-                        </td>
-                      </tr>
-                    ))}
+                    {rawTransactions.map((tx) => {
+                      const txDate = new Date(tx.created_at);
+                      const inRange = debugInfo?.calculatedBoundaries && 
+                        txDate >= new Date(debugInfo.calculatedBoundaries.start) && 
+                        txDate < new Date(debugInfo.calculatedBoundaries.end);
+                      return (
+                        <tr key={tx.id} className="border-t border-orange-100 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-orange-900/20">
+                          <td className="p-2 font-bold text-orange-900 dark:text-orange-100">{formatCurrency(tx.amount)}</td>
+                          <td className="p-2 text-orange-800 dark:text-orange-200">{tx.transaction_type}</td>
+                          <td className="p-2 text-orange-800 dark:text-orange-200">{tx.category_id || '—'}</td>
+                          <td className="p-2 font-mono text-orange-700 dark:text-orange-300">
+                            {txDate.toLocaleString()}
+                          </td>
+                          <td className="p-2">
+                            {inRange ? (
+                              <span className="text-green-600 dark:text-green-400 font-semibold">✓ YES</span>
+                            ) : (
+                              <span className="text-red-600 dark:text-red-400">✗ NO</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-              </div>
-            )}
-            <p className="text-xs text-red-600 dark:text-red-400 mt-2">
-              Note: The "Total Spent Today" uses get_daily_spent_amount() RPC which filters by timezone and rollover. 
-              Check your Supabase database logs for detailed RPC execution logs.
+              )}
+            </div>
+          </div>
+
+          {/* Console Log Instructions */}
+          <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-800">
+            <h4 className="font-semibold text-blue-800 dark:text-blue-300 text-sm mb-2">💡 Check Browser Console</h4>
+            <p className="text-xs text-blue-900 dark:text-blue-200">
+              Open DevTools Console (F12) to see detailed logs from the RPC call and timezone calculations.
             </p>
           </div>
         </CardContent>
       </Card>
-
-      {/* RLS Debug Panel */}
-      <RLSDebugPanel />
     </div>
   );
 };
