@@ -476,6 +476,26 @@ export const useBudgetState = () => {
     // Use current local state for reset calculation, explicitly marking as manual
     triggerWeeklyReset(modules, gearTravelFund, true);
   }, [modules, gearTravelFund, triggerWeeklyReset]);
+  
+  const handleFullReset = useCallback(() => {
+    if (!userId) return;
+
+    const todayISO = new Date().toISOString().split('T')[0];
+    
+    setModules(initialModules);
+    setGearTravelFund(0);
+    setResetBriefing(null); // Clear any pending briefing
+
+    showSuccess("Budget fully reset to initial configuration.");
+
+    // Save the reset state to the database
+    saveMutation.mutate({
+      user_id: userId,
+      current_tokens: initialModules,
+      gear_travel_fund: 0.00,
+      last_reset_date: todayISO,
+    });
+  }, [userId, saveMutation]);
 
   const handleFundAdjustment = useCallback((newFundValue: number) => {
     if (!userId) return;
@@ -506,5 +526,6 @@ export const useBudgetState = () => {
     handleCustomSpend,
     handleMondayReset,
     handleFundAdjustment,
+    handleFullReset, // Export the new function
   };
 };
