@@ -2,7 +2,8 @@ import { useCallback, useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useSession } from '@/contexts/SessionContext';
-import { Module, WeeklyBudgetState } from '@/types/supabase';
+import { Module } from '@/types/budget'; // Changed: import from budget, not supabase
+import { WeeklyBudgetState } from '@/types/supabase';
 import { formatCurrency } from '@/lib/format';
 import { toast } from 'sonner';
 import { GENERIC_MODULE_ID, WEEKLY_BUDGET_TOTAL } from '@/data/budgetData';
@@ -80,6 +81,16 @@ export const useBudgetState = () => {
   const { user } = useSession();
   const queryClient = useQueryClient();
   const userId = user?.id;
+
+  // State for Monday Briefing dialog
+  const [briefingData, setBriefingData] = useState<{
+    totalSpent: number;
+    totalBudget: number;
+    totalSurplus: number;
+    totalDeficit: number;
+    newGearTravelFund: number;
+    categoryBriefings: Array<{ categoryName: string; difference: number; newBaseValue?: number }>;
+  } | null>(null);
 
   const { data: state, isLoading, isError } = useQuery({
     queryKey: ['budgetState', userId],
@@ -277,14 +288,15 @@ export const useBudgetState = () => {
       queryClient.invalidateQueries({ queryKey: ['budgetState', userId] });
       queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
 
-      return {
+      // Set briefing data to show the dialog
+      setBriefingData({
         totalSpent,
         totalBudget,
         totalSurplus: difference > 0 ? difference : 0,
         totalDeficit: difference < 0 ? Math.abs(difference) : 0,
         newGearTravelFund: newFund,
         categoryBriefings: categoryBriefings.filter(item => item.difference !== 0)
-      };
+      });
     } catch (error) {
       console.error('Error in handleMondayReset:', error);
       toast.error('Failed to reset weekly budget');
@@ -304,6 +316,10 @@ export const useBudgetState = () => {
     }
   }, [saveMutation, queryClient, userId]);
 
+  const clearBriefing = useCallback(() => {
+    setBriefingData(null);
+  }, []);
+
   return {
     modules,
     gearTravelFund,
@@ -317,6 +333,8 @@ export const useBudgetState = () => {
     handleFundAdjustment,
     handleMondayReset,
     handleFullReset,
-    refetchSpentToday
+    refetchSpentToday,
+    resetBriefing: briefingData, // Add this
+    clearBriefing, // Add this
   };
 };
