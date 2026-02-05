@@ -15,3 +15,9 @@ export interface BudgetTransaction {
   description?: string;
   transaction_type: 'token_spend' | 'custom_spend' | 'generic_spend';
 }
+
+export interface UserProfile {
+  id: string;
+  timezone: string;
+  day_rollover_hour: number;
+}
