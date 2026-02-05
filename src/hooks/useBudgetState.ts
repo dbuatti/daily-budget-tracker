@@ -99,7 +99,7 @@ const fetchSpentToday = async (userId: string): Promise<number> => {
     }
     
     const numericData = parseFloat(data as string) || 0;
-    console.log('[useBudgetState] RPC returned raw data:', data, 'parsed to:', numericData);
+    console.log('[useBudgetState] RPC returned raw data:', data, 'type:', typeof data, 'parsed to:', numericData);
     return numericData;
   } catch (err) {
     console.error('[useBudgetState] Exception in fetchSpentToday:', err);
@@ -111,6 +111,8 @@ export const useBudgetState = () => {
   const { user } = useSession();
   const userId = user?.id;
   const queryClient = useQueryClient();
+
+  console.log('[useBudgetState] Hook called, userId:', userId);
 
   // Fetch initial weekly state
   const { data: dbState, isLoading: isLoadingWeekly, isError: isErrorWeekly } = useQuery({
@@ -150,10 +152,17 @@ export const useBudgetState = () => {
     }, 0);
   }, 0);
 
+  console.log('[useBudgetState] Derived state - totalSpentWeekly:', totalSpentWeekly, 'gearTravelFund:', gearTravelFund);
+
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: async ({ modules, gearTravelFund }: { modules: Module[]; gearTravelFund: number }) => {
       if (!user) throw new Error('User not authenticated');
+
+      console.log('[useBudgetState] saveMutation.mutateAsync called with:', { 
+        moduleCount: modules.length, 
+        gearTravelFund 
+      });
 
       const { error } = await supabase
         .from(WEEKLY_STATE_TABLE)
@@ -169,8 +178,11 @@ export const useBudgetState = () => {
         console.error('[useBudgetState] Error saving state:', error);
         throw error;
       }
+
+      console.log('[useBudgetState] State saved successfully');
     },
     onSuccess: async () => {
+      console.log('[useBudgetState] saveMutation onSuccess - invalidating queries');
       await queryClient.invalidateQueries({ queryKey: [WEEKLY_STATE_TABLE, userId] });
       await queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
     },
@@ -189,7 +201,12 @@ export const useBudgetState = () => {
     }) => {
       if (!user) throw new Error('User not authenticated');
 
-      console.log('[useBudgetState] Logging transaction:', { amount, categoryId, transactionType });
+      console.log('[useBudgetState] logTransactionMutation.mutateAsync called with:', { 
+        amount, 
+        categoryId, 
+        transactionType,
+        userId: user.id 
+      });
 
       const { error } = await supabase
         .from(BUDGET_TRANSACTIONS_TABLE)
@@ -204,8 +221,11 @@ export const useBudgetState = () => {
         console.error('[useBudgetState] Error logging transaction:', error);
         throw error;
       }
+
+      console.log('[useBudgetState] Transaction logged successfully');
     },
     onSuccess: async () => {
+      console.log('[useBudgetState] logTransactionMutation onSuccess - invalidating spentToday query');
       await queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
     },
   });
@@ -226,21 +246,27 @@ export const useBudgetState = () => {
 
   // Handle token spend
   const handleTokenSpend = useCallback(async (categoryId: string, tokenId: string) => {
+    console.log('[useBudgetState] handleTokenSpend called with:', { categoryId, tokenId });
+    
     try {
       // Find the category and token
       let categoryFound = false;
       let tokenFound = false;
       let amount = 0;
 
+      console.log('[useBudgetState] Current modules structure:', JSON.stringify(modules, null, 2));
+
       const updatedModules = modules.map(module => ({
         ...module,
         categories: module.categories.map(category => {
           if (category.id === categoryId) {
             categoryFound = true;
+            console.log('[useBudgetState] Found category:', category.name);
             const updatedTokens = category.tokens.map(token => {
               if (token.id === tokenId) {
                 tokenFound = true;
                 amount = token.value;
+                console.log('[useBudgetState] Found token, value:', token.value, 'spent:', token.spent);
                 return { ...token, spent: true };
               }
               return token;
@@ -252,12 +278,17 @@ export const useBudgetState = () => {
       }));
 
       if (!categoryFound || !tokenFound) {
+        console.error('[useBudgetState] Category or token not found!', { categoryFound, tokenFound, categoryId, tokenId });
         throw new Error('Category or token not found');
       }
 
+      console.log('[useBudgetState] About to log transaction with amount:', amount);
+      
       // Log the transaction
       await logTransactionMutation.mutateAsync({ amount, categoryId, transactionType: 'token_spend' });
 
+      console.log('[useBudgetState] About to save state with updated modules');
+      
       // Save updated state
       await saveMutation.mutateAsync({ modules: updatedModules, gearTravelFund });
 
@@ -270,6 +301,7 @@ export const useBudgetState = () => {
 
   // Handle generic spend (from QuickSpendButtons)
   const handleGenericSpend = useCallback(async (amount: number) => {
+    console.log('[useBudgetState] handleGenericSpend called with amount:', amount);
     try {
       await logTransactionMutation.mutateAsync({ amount, categoryId: GENERIC_CATEGORY_ID, transactionType: 'generic_spend' });
       toast.success(`Logged generic spend of ${formatCurrency(amount)}`);
@@ -281,6 +313,7 @@ export const useBudgetState = () => {
 
   // Handle custom spend (from AddTokenDialog)
   const handleCustomSpend = useCallback(async (categoryId: string, amount: number) => {
+    console.log('[useBudgetState] handleCustomSpend called with:', { categoryId, amount });
     try {
       await logTransactionMutation.mutateAsync({ amount, categoryId, transactionType: 'custom_spend' });
       toast.success(`Logged custom spend of ${formatCurrency(amount)} in category`);
@@ -320,14 +353,12 @@ export const useBudgetState = () => {
           // Deficit - reduce next week's budget
           totalDeficit += Math.abs(difference);
           // For deficits, we'll adjust the base value for next week
-          // (This is a simplified approach - you might want more sophisticated logic)
           const adjustmentFactor = 0.5; // Adjust by 50% of deficit
           const newBaseValue = Math.max(0, initialBudget - (Math.abs(difference) * adjustmentFactor));
           
           categoryMap.set(categoryId, {
             ...category,
             baseValue: newBaseValue,
-            // Reset tokens to unspent with same values
             tokens: category.tokens.map(token => ({ ...token, spent: false })),
           });
           
@@ -337,7 +368,6 @@ export const useBudgetState = () => {
             newBaseValue: newBaseValue,
           });
         } else {
-          // No change, just reset tokens
           categoryMap.set(categoryId, {
             ...category,
             tokens: category.tokens.map(token => ({ ...token, spent: false })),
@@ -345,16 +375,12 @@ export const useBudgetState = () => {
         }
       });
 
-      // Update gear travel fund with surplus
       const newGearTravelFund = gearTravelFund + totalSurplus;
-
-      // Convert map back to modules
       const updatedModules = mapToModules(categoryMap, initialModules);
 
       // Save the reset state
       await saveMutation.mutateAsync({ modules: updatedModules, gearTravelFund: newGearTravelFund });
 
-      // Set briefing data for dialog
       setBriefing({
         totalSpent: totalSpentWeekly,
         totalBudget: WEEKLY_BUDGET_TOTAL,
@@ -385,7 +411,6 @@ export const useBudgetState = () => {
   // Handle full reset (for debugging)
   const handleFullReset = useCallback(async () => {
     try {
-      // Reset all tokens to unspent
       const resetModules = initialModules.map(module => ({
         ...module,
         categories: module.categories.map(category => ({
@@ -409,6 +434,8 @@ export const useBudgetState = () => {
 
   const isLoading = isLoadingWeekly || isLoadingDaily || saveMutation.isPending || logTransactionMutation.isPending;
   const isError = isErrorWeekly || isErrorDaily;
+
+  console.log('[useBudgetState] Returning from hook - isLoading:', isLoading, 'isError:', isError);
 
   return {
     modules,
