@@ -4,12 +4,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useSession } from '@/contexts/SessionContext';
 import { initialModules, WEEKLY_BUDGET_TOTAL, TOTAL_TOKEN_BUDGET, GENERIC_MODULE_ID, GENERIC_CATEGORY_ID } from '@/data/budgetData';
 import { Module, Token, Category } from '@/types/budget';
-import { WeeklyBudgetState } from '@/types/supabase';
+import { WeeklyBudgetState, BudgetTransaction } from '@/types/supabase';
 import { showSuccess, showError } from '@/utils/toast';
 import { formatCurrency } from '@/lib/format';
 import { isBefore, startOfWeek } from 'date-fns';
 
-const TABLE_NAME = 'weekly_budget_state';
+const WEEKLY_STATE_TABLE = 'weekly_budget_state';
+const TRANSACTION_TABLE = 'budget_transactions';
 
 // --- Briefing Types ---
 interface BriefingItem {
@@ -62,7 +63,7 @@ const isResetDue = (lastResetDate: string): boolean => {
 
 const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState | null> => {
   const { data, error } = await supabase
-    .from(TABLE_NAME)
+    .from(WEEKLY_STATE_TABLE)
     .select('*')
     .eq('user_id', userId)
     .single();
@@ -81,10 +82,32 @@ const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState | nul
   return null;
 };
 
+const fetchSpentToday = async (userId: string): Promise<number> => {
+  const { data, error } = await supabase.rpc('get_daily_spent_amount', { p_user_id: userId });
+
+  if (error) {
+    console.error("Error fetching daily spent amount:", error);
+    throw new Error(error.message);
+  }
+  
+  // The RPC returns a numeric value (NUMERIC type in SQL)
+  return parseFloat(data as string) || 0;
+};
+
 const upsertBudgetState = async (state: Partial<WeeklyBudgetState> & { user_id: string }) => {
   const { error } = await supabase
-    .from(TABLE_NAME)
+    .from(WEEKLY_STATE_TABLE)
     .upsert(state, { onConflict: 'user_id' });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+};
+
+const logTransaction = async (transaction: BudgetTransaction) => {
+  const { error } = await supabase
+    .from(TRANSACTION_TABLE)
+    .insert(transaction);
 
   if (error) {
     throw new Error(error.message);
@@ -129,15 +152,23 @@ export const useBudgetState = () => {
   const userId = user?.id;
   const queryClient = useQueryClient();
 
-  // Fetch initial state
-  const { data: dbState, isLoading, isError } = useQuery({
-    queryKey: [TABLE_NAME, userId],
+  // Fetch initial weekly state
+  const { data: dbState, isLoading: isLoadingWeekly, isError: isErrorWeekly } = useQuery({
+    queryKey: [WEEKLY_STATE_TABLE, userId],
     queryFn: () => fetchBudgetState(userId!),
     enabled: !!userId,
     retry: (failureCount, error) => {
       if (failureCount >= 3) return false;
       return true;
     }
+  });
+  
+  // Fetch daily spent amount
+  const { data: spentToday = 0, isLoading: isLoadingDaily, isError: isErrorDaily, refetch: refetchDailySpent } = useQuery({
+    queryKey: ['spentToday', userId],
+    queryFn: () => fetchSpentToday(userId!),
+    enabled: !!userId,
+    initialData: 0,
   });
 
   // Local state management
@@ -146,17 +177,33 @@ export const useBudgetState = () => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [resetBriefing, setResetBriefing] = useState<ResetBriefing | null>(null);
 
+  const isLoading = isLoadingWeekly || isLoadingDaily || !isInitialized;
+  const isError = isErrorWeekly || isErrorDaily;
 
-  // Mutation for saving state changes
+
+  // Mutation for saving weekly state changes
   const saveMutation = useMutation({
     mutationFn: upsertBudgetState,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [TABLE_NAME, userId] });
+      queryClient.invalidateQueries({ queryKey: [WEEKLY_STATE_TABLE, userId] });
     },
     onError: (error) => {
-      showError(`Failed to save state: ${error.message}`);
+      showError(`Failed to save weekly state: ${error.message}`);
     }
   });
+  
+  // Mutation for logging individual transactions
+  const logTransactionMutation = useMutation({
+    mutationFn: logTransaction,
+    onSuccess: () => {
+      // Refetch daily spent amount immediately after a successful transaction log
+      refetchDailySpent();
+    },
+    onError: (error) => {
+      showError(`Failed to log transaction: ${error.message}`);
+    }
+  });
+
 
   // Function to perform the weekly reset logic (Asymmetric Rollover)
   const triggerWeeklyReset = useCallback((oldModules: Module[], currentFund: number, isManual: boolean = false) => {
@@ -263,9 +310,9 @@ export const useBudgetState = () => {
 
   // Initialize state from DB or defaults, and check for automatic reset
   useEffect(() => {
-    if (isLoading || !userId || isInitialized) return;
+    if (isLoadingWeekly || !userId || isInitialized) return;
 
-    if (isError) {
+    if (isErrorWeekly) {
       setModules(initialModules);
       setGearTravelFund(0);
       setIsInitialized(true);
@@ -306,9 +353,9 @@ export const useBudgetState = () => {
     }
     
     setIsInitialized(true);
-  }, [dbState, isLoading, userId, isInitialized, isError, saveMutation, triggerWeeklyReset]);
+  }, [dbState, isLoadingWeekly, userId, isInitialized, isErrorWeekly, saveMutation, triggerWeeklyReset]);
 
-  const totalSpent = useMemo(() => {
+  const totalSpentWeekly = useMemo(() => {
     return modules.reduce((moduleAcc, module) => {
       return moduleAcc + module.categories.reduce((catAcc, category) => {
         return catAcc + calculateCategorySpent(category);
@@ -320,11 +367,13 @@ export const useBudgetState = () => {
     if (!userId) return;
 
     let spentValue = 0;
+    let categoryName = 'Unknown Category';
     
     const newModules = modules.map(module => ({
       ...module,
       categories: module.categories.map(category => {
         if (category.id === categoryId) {
+          categoryName = category.name;
           return {
             ...category,
             tokens: category.tokens.map(token => {
@@ -342,15 +391,24 @@ export const useBudgetState = () => {
 
     if (spentValue > 0) {
       setModules(newModules);
-      showSuccess(`Spent ${formatCurrency(spentValue)} on ${newModules.find(m => m.categories.some(c => c.id === categoryId))?.categories.find(c => c.id === categoryId)?.name}.`);
+      showSuccess(`Spent ${formatCurrency(spentValue)} on ${categoryName}.`);
       
-      // Save the new state to the database
+      // 1. Save the new weekly state
       saveMutation.mutate({
         user_id: userId,
         current_tokens: newModules,
       });
+      
+      // 2. Log the individual transaction
+      logTransactionMutation.mutate({
+        user_id: userId,
+        amount: spentValue,
+        category_id: categoryId,
+        description: `Spent token: ${formatCurrency(spentValue)}`,
+        transaction_type: 'token_spend',
+      });
     }
-  }, [modules, userId, saveMutation]);
+  }, [modules, userId, saveMutation, logTransactionMutation]);
 
   const handleCustomSpend = useCallback((categoryId: string, amount: number) => {
     if (!userId || amount <= 0) return;
@@ -382,13 +440,22 @@ export const useBudgetState = () => {
 
     showSuccess(`Logged custom spend of ${formatCurrency(amount)} in ${categoryName}.`);
 
-    // Save the new state to the database
+    // 1. Save the new weekly state
     saveMutation.mutate({
       user_id: userId,
       current_tokens: newModules,
     });
+    
+    // 2. Log the individual transaction
+    logTransactionMutation.mutate({
+      user_id: userId,
+      amount: amount,
+      category_id: categoryId,
+      description: `Custom spend in ${categoryName}`,
+      transaction_type: 'custom_spend',
+    });
 
-  }, [modules, userId, saveMutation]);
+  }, [modules, userId, saveMutation, logTransactionMutation]);
 
   const handleGenericSpend = useCallback((amount: number) => {
     if (!userId) return;
@@ -462,13 +529,22 @@ export const useBudgetState = () => {
     setModules(newModules);
     showSuccess(`Logged generic spend of ${formatCurrency(amount)}.`);
 
-    // Save the new state to the database
+    // 1. Save the new weekly state
     saveMutation.mutate({
       user_id: userId,
       current_tokens: newModules,
     });
+    
+    // 2. Log the individual transaction
+    logTransactionMutation.mutate({
+      user_id: userId,
+      amount: amount,
+      category_id: GENERIC_CATEGORY_ID,
+      description: `Generic quick spend`,
+      transaction_type: 'generic_spend',
+    });
 
-  }, [modules, userId, saveMutation]);
+  }, [modules, userId, saveMutation, logTransactionMutation]);
 
 
   // Expose the manual reset function, now using the internal logic
@@ -495,6 +571,8 @@ export const useBudgetState = () => {
       gear_travel_fund: 0.00,
       last_reset_date: todayISO,
     });
+    
+    // Note: We do not clear budget_transactions here, as they are historical logs.
   }, [userId, saveMutation]);
 
   const handleFundAdjustment = useCallback((newFundValue: number) => {
@@ -516,8 +594,9 @@ export const useBudgetState = () => {
   return {
     modules,
     gearTravelFund,
-    totalSpent,
-    isLoading: isLoading || saveMutation.isPending || !isInitialized,
+    totalSpent: totalSpentWeekly, // Total spent this week
+    spentToday, // Total spent today (new)
+    isLoading: isLoading || saveMutation.isPending || logTransactionMutation.isPending,
     isError,
     resetBriefing,
     clearBriefing,
@@ -526,6 +605,6 @@ export const useBudgetState = () => {
     handleCustomSpend,
     handleMondayReset,
     handleFundAdjustment,
-    handleFullReset, // Export the new function
+    handleFullReset,
   };
 };
