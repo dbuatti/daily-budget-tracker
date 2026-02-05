@@ -2,8 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useSession } from '@/contexts/SessionContext';
-import { initialModules, WEEKLY_BUDGET_TOTAL, TOTAL_TOKEN_BUDGET } from '@/data/budgetData';
-import { Module } from '@/types/budget';
+import { initialModules, WEEKLY_BUDGET_TOTAL, TOTAL_TOKEN_BUDGET, GENERIC_MODULE_ID, GENERIC_CATEGORY_ID } from '@/data/budgetData';
+import { Module, Token } from '@/types/budget';
 import { WeeklyBudgetState } from '@/types/supabase';
 import { showSuccess, showError } from '@/utils/toast';
 import { formatCurrency } from '@/lib/format';
@@ -167,6 +167,85 @@ export const useBudgetState = () => {
     }
   }, [modules, userId, saveMutation]);
 
+  const handleGenericSpend = useCallback((amount: number) => {
+    if (!userId) return;
+
+    const newSpentToken: Token = {
+      id: `generic-${Date.now()}-${Math.random()}`,
+      value: amount,
+      spent: true,
+    };
+
+    let newModules: Module[];
+    
+    // Find the generic module/category or create it if it doesn't exist
+    const genericModuleIndex = modules.findIndex(m => m.id === GENERIC_MODULE_ID);
+
+    if (genericModuleIndex !== -1) {
+      // Module exists, find category
+      const genericCategoryIndex = modules[genericModuleIndex].categories.findIndex(c => c.id === GENERIC_CATEGORY_ID);
+      
+      if (genericCategoryIndex !== -1) {
+        // Category exists, add new token
+        newModules = modules.map((module, mIdx) => {
+          if (mIdx === genericModuleIndex) {
+            return {
+              ...module,
+              categories: module.categories.map((category, cIdx) => {
+                if (cIdx === genericCategoryIndex) {
+                  return {
+                    ...category,
+                    tokens: [...category.tokens, newSpentToken],
+                  };
+                }
+                return category;
+              }),
+            };
+          }
+          return module;
+        });
+      } else {
+        // Module exists, but category doesn't (shouldn't happen if initialized correctly, but safe guard)
+        newModules = modules.map((module, mIdx) => {
+          if (mIdx === genericModuleIndex) {
+            return {
+              ...module,
+              categories: [...module.categories, {
+                id: GENERIC_CATEGORY_ID,
+                name: "Generic Spend",
+                tokens: [newSpentToken],
+              }],
+            };
+          }
+          return module;
+        });
+      }
+    } else {
+      // Neither module nor category exists, create the whole structure and prepend it
+      const genericModule: Module = {
+        id: GENERIC_MODULE_ID,
+        name: "Generic Spend (Hidden)",
+        categories: [{
+          id: GENERIC_CATEGORY_ID,
+          name: "Generic Spend",
+          tokens: [newSpentToken],
+        }],
+      };
+      newModules = [genericModule, ...modules];
+    }
+
+    setModules(newModules);
+    showSuccess(`Logged generic spend of ${formatCurrency(amount)}.`);
+
+    // Save the new state to the database
+    saveMutation.mutate({
+      user_id: userId,
+      current_tokens: newModules,
+    });
+
+  }, [modules, userId, saveMutation]);
+
+
   const handleMondayReset = useCallback(() => {
     if (!userId) return;
 
@@ -220,6 +299,7 @@ export const useBudgetState = () => {
     isLoading: isLoading || saveMutation.isPending || !isInitialized,
     isError,
     handleTokenSpend,
+    handleGenericSpend, // Export the new handler
     handleMondayReset,
     handleFundAdjustment,
   };

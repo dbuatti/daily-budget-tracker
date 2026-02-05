@@ -10,6 +10,11 @@ const createTokens = (baseId: string, values: number[]): Token[] =>
 
 export const WEEKLY_BUDGET_TOTAL = 649.00;
 
+// --- Generic Spend Constants ---
+export const GENERIC_MODULE_ID = "Z";
+export const GENERIC_CATEGORY_ID = "Z1";
+// -------------------------------
+
 // Fixed costs based on analysis (approx $267.00 total)
 export const initialFixedCosts = [
   { name: "Subscriptions", weekly_amount: 47.00 },
