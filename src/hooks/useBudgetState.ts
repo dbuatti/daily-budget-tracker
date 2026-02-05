@@ -167,6 +167,44 @@ export const useBudgetState = () => {
     }
   }, [modules, userId, saveMutation]);
 
+  const handleCustomSpend = useCallback((categoryId: string, amount: number) => {
+    if (!userId || amount <= 0) return;
+
+    const newSpentToken: Token = {
+      id: `custom-${categoryId}-${Date.now()}-${Math.random()}`,
+      value: amount,
+      spent: true,
+    };
+
+    const newModules = modules.map(module => ({
+      ...module,
+      categories: module.categories.map(category => {
+        if (category.id === categoryId) {
+          return {
+            ...category,
+            // Add the new token to the category's token list
+            tokens: [...category.tokens, newSpentToken],
+          };
+        }
+        return category;
+      }),
+    }));
+
+    setModules(newModules);
+    
+    const categoryName = newModules.find(m => m.categories.some(c => c.id === categoryId))
+                                   ?.categories.find(c => c.id === categoryId)?.name || 'Unknown Category';
+
+    showSuccess(`Logged custom spend of ${formatCurrency(amount)} in ${categoryName}.`);
+
+    // Save the new state to the database
+    saveMutation.mutate({
+      user_id: userId,
+      current_tokens: newModules,
+    });
+
+  }, [modules, userId, saveMutation]);
+
   const handleGenericSpend = useCallback((amount: number) => {
     if (!userId) return;
 
@@ -300,6 +338,7 @@ export const useBudgetState = () => {
     isError,
     handleTokenSpend,
     handleGenericSpend, // Export the new handler
+    handleCustomSpend,
     handleMondayReset,
     handleFundAdjustment,
   };
