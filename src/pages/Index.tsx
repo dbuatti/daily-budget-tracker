@@ -13,7 +13,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { toast } from 'sonner';
 
 const LogTransaction = () => {
-  const { modules, isLoading, handleTokenSpend, resetBriefing, clearBriefing, spentToday, isLoading: isStateLoading, totalSpent: totalSpentWeekly, refetchSpentToday } = useBudgetState();
+  const { modules, isLoading, handleTokenSpend, resetBriefing, clearBriefing, spentToday = 0, isLoading: isStateLoading, totalSpent: totalSpentWeekly, refetchSpentToday } = useBudgetState();
   const { profile } = useUserProfile();
   
   // State for debug panel

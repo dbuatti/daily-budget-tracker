@@ -6,7 +6,7 @@ import { Module } from '@/types/budget';
 import { WeeklyBudgetState } from '@/types/supabase';
 import { formatCurrency } from '@/lib/format';
 import { toast } from 'sonner';
-import { GENERIC_MODULE_ID, WEEKLY_BUDGET_TOTAL, initialModules, FUEL_CATEGORY_ID } from '@/data/budgetData';
+import { GENERIC_MODULE_ID, WEEKLY_BUDGET_TOTAL, initialModules, FUEL_CATEGORY_ID, GENERIC_CATEGORY_ID } from '@/data/budgetData';
 
 const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState> => {
   const { data, error } = await supabase
@@ -242,17 +242,13 @@ export const useBudgetState = () => {
     enabled: !!userId,
   });
 
-  const { data: spentToday, refetch: refetchSpentToday } = useQuery({
+  const { data: spentTodayData, refetch: refetchSpentToday } = useQuery({
     queryKey: ['spentToday', userId],
     queryFn: () => fetchSpentToday(userId!),
     enabled: !!userId,
-    onSuccess: (data) => {
-      console.log('spentToday query success:', data);
-    },
-    onError: (error) => {
-      console.error('spentToday query error:', error);
-    }
   });
+  
+  const spentToday = spentTodayData || 0;
 
   const logTransactionMutation = useMutation({
     mutationFn: ({ amount, categoryId, transactionType }: { amount: number; categoryId?: string; transactionType: 'token_spend' | 'custom_spend' | 'generic_spend' }) => 
@@ -515,7 +511,7 @@ export const useBudgetState = () => {
     modules,
     gearTravelFund,
     totalSpent: totalSpentWeekly, // This is now the weekly total (excluding Fuel)
-    spentToday: spentToday || 0,
+    spentToday,
     isLoading,
     isError,
     handleTokenSpend,
