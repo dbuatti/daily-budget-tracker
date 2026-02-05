@@ -15,7 +15,7 @@ const createCategory = (id: string, name: string, tokenValues: number[]): Catego
     return { id, name, tokens, baseValue };
 };
 
-export const WEEKLY_BUDGET_TOTAL = 450.00;
+export const WEEKLY_BUDGET_TOTAL = 300.00; // Updated to $300.00
 
 // --- Generic Spend Constants ---
 export const GENERIC_MODULE_ID = "Z";
@@ -31,8 +31,8 @@ export const initialModules: Module[] = [
     id: "A",
     name: "Daily Essentials",
     categories: [
-      createCategory("A1", "Groceries", [20, 20, 30]), // $70.00
-      createCategory("A2", "Meals Out", [15, 15, 15]), // $45.00
+      createCategory("A1", "Groceries", [20, 30]), // $50.00 (Adjusted from $70)
+      createCategory("A2", "Meals Out", [15, 15]), // $30.00 (Adjusted from $45)
       createCategory("A3", "Coffee", [5, 5, 5]), // $15.00
       createCategory("A4", "Drinks / Treats", [5]), // $5.00
     ],
@@ -57,7 +57,7 @@ export const initialModules: Module[] = [
     id: "D",
     name: "Health & Wellness",
     categories: [
-      createCategory("D1", "Wellbeing/Yoga", [30]), // $30.00
+      createCategory("D1", "Wellbeing/Yoga", [20]), // $20.00 (Adjusted from $30)
       createCategory("D2", "Medicine/Specialists", [10, 10]), // $20.00
     ],
   },
@@ -65,7 +65,7 @@ export const initialModules: Module[] = [
     id: "E",
     name: "Professional & Music",
     categories: [
-      createCategory("E1", "Technology/Gear", [10, 10, 10]), // $30.00
+      createCategory("E1", "Technology/Gear", [5, 10]), // $15.00 (Adjusted from $30)
       createCategory("E2", "Gig Prep", [10]), // $10.00
     ],
   },
@@ -83,7 +83,7 @@ export const initialModules: Module[] = [
     categories: [
       // Fuel is a manual entry category. We give it a base value for weekly tracking, 
       // but it will be handled specially during reset.
-      createCategory(FUEL_CATEGORY_ID, "Fuel", [50]), // $50.00 weekly allocation
+      createCategory(FUEL_CATEGORY_ID, "Fuel", [30]), // $30.00 weekly allocation (Adjusted from $50)
     ],
   },
 ];
