@@ -1,7 +1,7 @@
 import React from 'react';
 import { formatCurrency } from '@/lib/format';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
+import StyledProgress from '@/components/StyledProgress'; // Use StyledProgress instead of ui/progress
 import { WEEKLY_BUDGET_TOTAL, TOTAL_TOKEN_BUDGET } from '@/data/budgetData';
 import { DollarSign, TrendingUp, Wallet } from 'lucide-react';
 
@@ -66,7 +66,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ totalSpent, gearTrave
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Spent: {formatCurrency(totalSpent)}
           </p>
-          <Progress 
+          <StyledProgress 
             value={progressValue} 
             className="mt-3 h-2" 
             indicatorClassName={deficit > 0 ? "bg-red-500" : "bg-green-500"}
@@ -89,7 +89,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ totalSpent, gearTrave
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Savings Progress ({formatCurrency(savingsGoal)} goal)
           </p>
-          <Progress 
+          <StyledProgress 
             value={savingsProgress} 
             className="mt-3 h-2" 
             indicatorClassName="bg-yellow-500"
