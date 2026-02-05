@@ -204,7 +204,7 @@ const LogTransaction = () => {
               {formatCurrency(totalSpentWeekly).replace('A$', '$')}
             </p>
             <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-2">
-              out of {formatCurrency(382.00).replace('A$', '$')} token budget
+              out of {formatCurrency(TOTAL_TOKEN_BUDGET).replace('A$', '$')} token budget
             </p>
           </div>
 
@@ -214,15 +214,15 @@ const LogTransaction = () => {
             <div className="relative pt-1">
               <div className="flex mb-2 items-center justify-between">
                 <span className="text-xs font-semibold inline-block text-indigo-600 dark:text-indigo-400">
-                  {Math.round((totalSpentWeekly / 382.00) * 100)}% Used
+                  {Math.round((totalSpentWeekly / TOTAL_TOKEN_BUDGET) * 100)}% Used
                 </span>
                 <span className="text-xs font-semibold inline-block text-gray-600 dark:text-gray-400">
-                  {formatCurrency(382.00 - totalSpentWeekly).replace('A$', '$')} remaining
+                  {formatCurrency(TOTAL_TOKEN_BUDGET - totalSpentWeekly).replace('A$', '$')} remaining
                 </span>
               </div>
               <div className="overflow-hidden h-3 mb-4 text-xs flex rounded bg-gray-200 dark:bg-gray-800">
                 <div 
-                  style={{ width: `${Math.min(100, (totalSpentWeekly / 382.00) * 100)}%` }}
+                  style={{ width: `${Math.min(100, (totalSpentWeekly / TOTAL_TOKEN_BUDGET) * 100)}%` }}
                   className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-indigo-600 dark:bg-indigo-500 transition-all duration-500"
                 ></div>
               </div>
