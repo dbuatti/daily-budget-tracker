@@ -18,14 +18,41 @@ export const SessionContextProvider: React.FC<{ children: ReactNode }> = ({ chil
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
-      setUser(session?.user ?? null);
+      
+      if (session?.user) {
+        // Fetch profile and ensure timezone is set
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('timezone')
+          .eq('id', session.user.id)
+          .single();
+        
+        if (profile && !profile.timezone) {
+          const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          const { error } = await supabase
+            .from('profiles')
+            .update({ timezone: clientTimezone })
+            .eq('id', session.user.id);
+          
+          if (error) {
+            console.error('Failed to update timezone:', error);
+          } else {
+            console.log(`Updated user ${session.user.id} timezone to ${clientTimezone}`);
+          }
+        }
+        
+        setUser(session.user);
+      }
+      
       setIsLoading(false);
-    });
+    };
 
-    // Fetch initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    init();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       setIsLoading(false);
@@ -34,7 +61,7 @@ export const SessionContextProvider: React.FC<{ children: ReactNode }> = ({ chil
     return () => subscription.unsubscribe();
   }, []);
 
-  // Update user's timezone if not set, then refetch spentToday
+  // Update user's timezone if not set, then refetch queries
   useEffect(() => {
     const updateUserTimezone = async () => {
       if (user) {
@@ -55,8 +82,9 @@ export const SessionContextProvider: React.FC<{ children: ReactNode }> = ({ chil
             console.error('Failed to update timezone:', error);
           } else {
             console.log(`Updated user ${user.id} timezone to ${clientTimezone}`);
-            // Refetch spentToday with correct timezone
+            // Refetch queries with correct timezone
             queryClient.invalidateQueries({ queryKey: ['spentToday', user.id] });
+            queryClient.invalidateQueries({ queryKey: ['userProfile', user.id] });
           }
         }
       }

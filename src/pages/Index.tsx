@@ -1,29 +1,38 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useBudgetState } from '@/hooks/useBudgetState';
 import ModuleSection from '@/components/ModuleSection';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
 import MondayBriefingDialog from '@/components/MondayBriefingDialog';
-import { Loader2, Bug, RefreshCw } from 'lucide-react';
+import { Loader2, Bug, RefreshCw, Terminal } from 'lucide-react';
 import { GENERIC_MODULE_ID } from '@/data/budgetData';
 import { formatCurrency } from '@/lib/format';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { getDayBoundaries } from '@/lib/time-utils';
+import { toast } from 'sonner';
 
 const LogTransaction = () => {
   const { modules, isLoading, handleTokenSpend, resetBriefing, clearBriefing, spentToday, isLoading: isStateLoading, totalSpent: totalSpentWeekly, refetchSpentToday } = useBudgetState();
   const { profile } = useUserProfile();
   
-  // State for raw transactions debug panel
+  // State for debug panel
   const [rawTransactions, setRawTransactions] = React.useState<any[]>([]);
   const [queryStatus, setQueryStatus] = React.useState<string>('idle');
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [isDebugLoading, setIsDebugLoading] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
+
+  const addLog = useCallback((message: string) => {
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}`;
+    console.log(logMessage);
+    setLogs(prev => [logMessage, ...prev].slice(0, 50)); // Keep last 50 logs
+  }, []);
 
   const fetchRawTransactions = async () => {
     setQueryStatus('loading');
+    addLog('Fetching raw transactions...');
     try {
       const { data, error } = await supabase
         .from('budget_transactions')
@@ -32,51 +41,72 @@ const LogTransaction = () => {
         .limit(20);
       
       if (error) {
-        console.error('Error fetching raw transactions:', error);
+        addLog(`Error fetching raw transactions: ${error.message}`);
         setQueryStatus('error');
       } else {
-        console.log('Raw transactions from DB:', data);
+        addLog(`Fetched ${data?.length || 0} raw transactions`);
         setRawTransactions(data || []);
         setQueryStatus('success');
       }
     } catch (err) {
-      console.error('Exception fetching raw transactions:', err);
+      addLog(`Exception fetching raw transactions: ${String(err)}`);
       setQueryStatus('error');
     }
   };
 
   const runDebugChecks = async () => {
     setIsDebugLoading(true);
+    addLog('Starting debug checks...');
     try {
-      const userId = supabase.auth.getUser().then(({ data }) => data.user?.id);
-      const user = await userId;
-      
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
+        addLog('Not authenticated');
         setDebugInfo({ error: 'Not authenticated' });
         return;
       }
 
+      addLog(`User ID: ${user.id}`);
+
       // 1. Get user profile
-      const { data: profileData } = await supabase
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('timezone, day_rollover_hour')
         .eq('id', user.id)
         .single();
 
-      // 2. Calculate day boundaries
-      const today = new Date();
-      const boundaries = getDayBoundaries(user.id, today);
-      
-      // 3. Get all transactions for today based on calculated boundaries
-      const { data: todayTx, error: txError } = await supabase
-        .from('budget_transactions')
-        .select('*')
-        .eq('user_id', user.id)
-        .gte('created_at', boundaries.start_time)
-        .lt('created_at', boundaries.end_time)
-        .order('created_at', { ascending: false });
+      if (profileError) {
+        addLog(`Error fetching profile: ${profileError.message}`);
+      } else {
+        addLog(`Profile: timezone=${profileData?.timezone}, day_rollover_hour=${profileData?.day_rollover_hour}`);
+      }
 
-      // 4. Get all transactions in a wider window (last 24 hours) to see if any exist
+      const timezone = profileData?.timezone || 'UTC';
+      const rolloverHour = profileData?.day_rollover_hour || 0;
+
+      // 2. Call the debug RPC to get detailed info
+      addLog('Calling debug_daily_spent RPC...');
+      const { data: debugResult, error: debugError } = await supabase
+        .rpc('debug_daily_spent', { p_user_id: user.id });
+
+      if (debugError) {
+        addLog(`Debug RPC error: ${debugError.message}`);
+      } else {
+        addLog(`Debug RPC result: ${JSON.stringify(debugResult)}`);
+        setDebugInfo(debugResult);
+      }
+
+      // 3. Also call the original RPC to compare
+      addLog('Calling get_daily_spent_amount RPC...');
+      const { data: rpcResult, error: rpcError } = await supabase
+        .rpc('get_daily_spent_amount', { p_user_id: user.id });
+
+      if (rpcError) {
+        addLog(`get_daily_spent_amount error: ${rpcError.message}`);
+      } else {
+        addLog(`get_daily_spent_amount returned: ${rpcResult}`);
+      }
+
+      // 4. Get all transactions in last 24h for comparison
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const { data: last24hTx } = await supabase
         .from('budget_transactions')
@@ -85,34 +115,28 @@ const LogTransaction = () => {
         .gte('created_at', twentyFourHoursAgo.toISOString())
         .order('created_at', { ascending: false });
 
-      // 5. Call the RPC directly to see what it returns
-      const { data: rpcResult, error: rpcError } = await supabase
-        .rpc('get_daily_spent_amount', { p_user_id: user.id });
+      addLog(`Transactions in last 24h: ${last24hTx?.length || 0}`);
 
-      setDebugInfo({
-        userTimezone: profileData?.timezone || 'Not set',
-        dayRolloverHour: profileData?.day_rollover_hour || 0,
-        calculatedBoundaries: {
-          start: boundaries.start_time,
-          end: boundaries.end_time
-        },
-        todayTransactions: todayTx || [],
-        last24hTransactions: last24hTx || [],
-        rpcResult: rpcResult,
-        rpcError: rpcError?.message,
-        totalFromTodayTx: (todayTx || []).reduce((sum, tx) => sum + Number(tx.amount), 0),
-        totalFrom24hTx: (last24hTx || []).reduce((sum, tx) => sum + Number(tx.amount), 0)
-      });
-
-      console.log('Debug Info:', {
-        profile: profileData,
-        boundaries,
-        todayTx,
-        rpcResult,
-        rpcError
-      });
+      // 5. Log each transaction with timezone conversion
+      if (last24hTx) {
+        for (const tx of last24hTx) {
+          const txDate = new Date(tx.created_at);
+          const txDateInUserTZ = new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+          }).format(txDate);
+          addLog(`Tx ${tx.id.slice(0,8)}: ${formatCurrency(tx.amount)} at ${txDateInUserTZ} (${tx.transaction_type})`);
+        }
+      }
 
     } catch (err) {
+      addLog(`Debug error: ${String(err)}`);
       console.error('Debug error:', err);
       setDebugInfo({ error: String(err) });
     } finally {
@@ -123,6 +147,14 @@ const LogTransaction = () => {
   useEffect(() => {
     fetchRawTransactions();
   }, []);
+
+  // Auto-refresh spentToday when profile changes
+  useEffect(() => {
+    if (profile) {
+      addLog(`Profile loaded: timezone=${profile.timezone}, rollover=${profile.day_rollover_hour}`);
+      refetchSpentToday();
+    }
+  }, [profile, refetchSpentToday]);
 
   if (isLoading) {
     return (
@@ -152,9 +184,11 @@ const LogTransaction = () => {
             <p className="text-5xl font-extrabold mt-2">
               {formatCurrency(spentToday).replace('A$', '$')}
             </p>
-            <p className="text-xs mt-2 opacity-70">
-              (from RPC: {formatCurrency(debugInfo?.rpcResult || 0).replace('A$', '$')})
-            </p>
+            {debugInfo && (
+              <p className="text-xs mt-2 opacity-70">
+                RPC says: {formatCurrency(debugInfo.spent_amount || 0).replace('A$', '$')}
+              </p>
+            )}
           </div>
           
           <QuickSpendButtons />
@@ -258,36 +292,23 @@ const LogTransaction = () => {
             </div>
           </div>
 
-          {/* RPC Result */}
-          <div className="p-3 bg-orange-100 dark:bg-orange-900/50 rounded-lg border border-orange-200 dark:border-orange-800">
-            <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">RPC Result (get_daily_spent_amount)</h4>
-            <div className="text-xs space-y-1 text-orange-900 dark:text-orange-200">
-              <p><strong>Returned Value:</strong> {formatCurrency(debugInfo?.rpcResult || 0)}</p>
-              <p><strong>Error:</strong> {debugInfo?.rpcError || 'None'}</p>
-            </div>
-          </div>
-
-          {/* Day Boundaries */}
-          {debugInfo?.calculatedBoundaries && (
+          {/* Debug RPC Result */}
+          {debugInfo && (
             <div className="p-3 bg-orange-100 dark:bg-orange-900/50 rounded-lg border border-orange-200 dark:border-orange-800">
-              <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">Calculated Day Boundaries</h4>
+              <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">Debug RPC Result</h4>
               <div className="text-xs space-y-1 text-orange-900 dark:text-orange-200">
-                <p><strong>Start:</strong> {new Date(debugInfo.calculatedBoundaries.start).toLocaleString()}</p>
-                <p><strong>End:</strong> {new Date(debugInfo.calculatedBoundaries.end).toLocaleString()}</p>
+                <p><strong>Timezone:</strong> {debugInfo.debug_info?.user_timezone}</p>
+                <p><strong>Rollover Hour:</strong> {debugInfo.debug_info?.day_rollover_hour}</p>
+                <p><strong>Current Time in TZ:</strong> {debugInfo.debug_info?.current_time_in_user_tz?.toString()}</p>
+                <p><strong>Target Date:</strong> {debugInfo.debug_info?.target_date}</p>
+                <p><strong>Boundaries:</strong></p>
+                <p className="ml-2">Start: {new Date(debugInfo.boundaries?.start_time).toLocaleString()}</p>
+                <p className="ml-2">End: {new Date(debugInfo.boundaries?.end_time).toLocaleString()}</p>
+                <p><strong>Spent Amount:</strong> {formatCurrency(debugInfo.spent_amount || 0)}</p>
+                <p><strong>Transaction Count:</strong> {debugInfo.transaction_count}</p>
               </div>
             </div>
           )}
-
-          {/* Transaction Counts */}
-          <div className="p-3 bg-orange-100 dark:bg-orange-900/50 rounded-lg border border-orange-200 dark:border-orange-800">
-            <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">Transaction Analysis</h4>
-            <div className="text-xs space-y-1 text-orange-900 dark:text-orange-200">
-              <p><strong>Transactions in calculated day:</strong> {debugInfo?.todayTransactions?.length || 0}</p>
-              <p><strong>Transactions in last 24h:</strong> {debugInfo?.last24hTransactions?.length || 0}</p>
-              <p><strong>Sum from today's transactions:</strong> {formatCurrency(debugInfo?.totalFromTodayTx || 0)}</p>
-              <p><strong>Sum from last 24h:</strong> {formatCurrency(debugInfo?.totalFrom24hTx || 0)}</p>
-            </div>
-          </div>
 
           {/* Recent Transactions Table */}
           <div className="overflow-hidden rounded-lg border border-orange-200 dark:border-orange-800">
@@ -313,16 +334,16 @@ const LogTransaction = () => {
                   <tbody>
                     {rawTransactions.map((tx) => {
                       const txDate = new Date(tx.created_at);
-                      const inRange = debugInfo?.calculatedBoundaries && 
-                        txDate >= new Date(debugInfo.calculatedBoundaries.start) && 
-                        txDate < new Date(debugInfo.calculatedBoundaries.end);
+                      const inRange = debugInfo?.boundaries && 
+                        txDate >= new Date(debugInfo.boundaries.start_time) && 
+                        txDate < new Date(debugInfo.boundaries.end_time);
                       return (
                         <tr key={tx.id} className="border-t border-orange-100 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-orange-900/20">
                           <td className="p-2 font-bold text-orange-900 dark:text-orange-100">{formatCurrency(tx.amount)}</td>
                           <td className="p-2 text-orange-800 dark:text-orange-200">{tx.transaction_type}</td>
                           <td className="p-2 text-orange-800 dark:text-orange-200">{tx.category_id || '—'}</td>
                           <td className="p-2 font-mono text-orange-700 dark:text-orange-300">
-                            {txDate.toLocaleString()}
+                            {txDate.toLocaleString()} UTC
                           </td>
                           <td className="p-2">
                             {inRange ? (
@@ -340,11 +361,32 @@ const LogTransaction = () => {
             </div>
           </div>
 
+          {/* Activity Log */}
+          <div className="overflow-hidden rounded-lg border border-orange-200 dark:border-orange-800">
+            <div className="bg-orange-100 dark:bg-orange-900/50 p-2 flex items-center">
+              <Terminal className="w-4 h-4 mr-2 text-orange-800 dark:text-orange-300" />
+              <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm">
+                Activity Log
+              </h4>
+            </div>
+            <div className="max-h-64 overflow-y-auto bg-gray-900 dark:bg-black p-2 font-mono text-xs">
+              {logs.length === 0 ? (
+                <p className="text-gray-500 italic">No logs yet. Run diagnostics to see activity.</p>
+              ) : (
+                logs.map((log, i) => (
+                  <div key={i} className="mb-1 text-green-400 dark:text-green-300">
+                    {log}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
           {/* Console Log Instructions */}
           <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-800">
             <h4 className="font-semibold text-blue-800 dark:text-blue-300 text-sm mb-2">💡 Check Browser Console</h4>
             <p className="text-xs text-blue-900 dark:text-blue-200">
-              Open DevTools Console (F12) to see detailed logs from the RPC call and timezone calculations.
+              Open DevTools Console (F12) to see additional logs. The Supabase RPC also logs to the database console.
             </p>
           </div>
         </CardContent>
