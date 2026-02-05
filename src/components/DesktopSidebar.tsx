@@ -4,6 +4,7 @@ import { LayoutDashboard, DollarSign, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { MadeWithDyad } from '@/components/made-with-dyad';
+import LogoutButton from './LogoutButton';
 
 interface NavItemProps {
   to: string;
@@ -59,6 +60,9 @@ const DesktopSidebar: React.FC = () => {
 
       {/* Footer/User Area */}
       <Separator className="my-4 bg-sidebar-border" />
+      <div className="px-2 space-y-2">
+        <LogoutButton />
+      </div>
       <MadeWithDyad />
     </div>
   );
