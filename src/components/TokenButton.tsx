@@ -17,7 +17,8 @@ const TokenButton: React.FC<TokenButtonProps> = ({ value, spent, onClick }) => {
       onClick={onClick}
       disabled={spent}
       className={cn(
-        "h-10 w-20 rounded-xl font-semibold transition-all duration-200 shadow-lg",
+        // Increased size and made circular for easy tapping
+        "h-16 w-16 rounded-full font-bold text-lg transition-all duration-200 shadow-lg flex items-center justify-center p-0",
         spent
           ? "bg-gray-300 text-gray-500 hover:bg-gray-300 cursor-not-allowed border-2 border-gray-400"
           : "bg-indigo-600 text-white hover:bg-indigo-700 border-2 border-indigo-700 active:scale-[0.98]",
