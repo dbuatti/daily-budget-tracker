@@ -8,6 +8,7 @@ import { useBudgetState } from '@/hooks/useBudgetState';
 import { FUEL_CATEGORY_ID } from '@/data/budgetData';
 import { cn } from '@/lib/utils';
 import { ShoppingBag, Car, Home, Heart, Music, Zap, DollarSign } from 'lucide-react';
+import StyledProgress from './StyledProgress';
 
 interface CategoryCardProps {
   category: Category;
@@ -44,6 +45,11 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) =
 
   const remainingBalance = displayInitialBudget - totalSpentInThisCategory;
   const isOverspent = remainingBalance < 0;
+  
+  // Calculate progress percentage
+  const progressValue = displayInitialBudget > 0 
+    ? Math.max(0, Math.min(100, (remainingBalance / displayInitialBudget) * 100))
+    : 0;
 
   return (
     <Card className={cn(
@@ -75,13 +81,21 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) =
             </span>
           </div>
         </CardTitle>
-        <div className="flex justify-between items-center mt-2">
-          <p className="text-xs text-gray-500">
-            {statusLabel}: <span className="font-semibold">{formatCurrency(displayInitialBudget).replace('A$', '$')}</span>
-          </p>
-          <p className="text-xs text-gray-500">
-            Spent: <span className="font-semibold">{formatCurrency(totalSpentInThisCategory).replace('A$', '$')}</span>
-          </p>
+        
+        <div className="space-y-2 mt-2">
+          <StyledProgress 
+            value={progressValue} 
+            className="h-1.5 bg-gray-100 dark:bg-gray-800"
+            indicatorClassName={isOverspent ? "bg-red-500" : "bg-green-500"}
+          />
+          <div className="flex justify-between items-center">
+            <p className="text-[10px] text-gray-500 font-medium">
+              {statusLabel}: <span className="font-bold">{formatCurrency(displayInitialBudget).replace('A$', '$')}</span>
+            </p>
+            <p className="text-[10px] text-gray-500 font-medium">
+              Spent: <span className="font-bold">{formatCurrency(totalSpentInThisCategory).replace('A$', '$')}</span>
+            </p>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="flex flex-wrap gap-4 p-4">

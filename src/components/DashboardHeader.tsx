@@ -4,7 +4,7 @@ import React from 'react';
 import { formatCurrency } from '@/lib/format';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import StyledProgress from '@/components/StyledProgress';
-import { DollarSign, TrendingUp, Wallet, Calendar, Coffee, Activity, Info } from 'lucide-react';
+import { DollarSign, TrendingUp, Wallet, Calendar, Activity } from 'lucide-react';
 import { Module } from '@/types/budget';
 import { differenceInDays, nextMonday, startOfDay, getDay } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -36,9 +36,11 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ totalSpent, gearTrave
 
   const dayOfWeek = getDay(now) === 0 ? 7 : getDay(now);
   const expectedSpendRatio = dayOfWeek / 7;
-  const actualSpendRatio = totalBudget > 0 ? totalSpent / totalBudget : 0;
-  const isOverPace = actualSpendRatio > expectedSpendRatio + 0.05;
-  const isUnderPace = actualSpendRatio < expectedSpendRatio - 0.05;
+  const targetSpend = totalBudget * expectedSpendRatio;
+  const paceDifference = targetSpend - totalSpent;
+  
+  const isOverPace = totalSpent > targetSpend + (totalBudget * 0.05);
+  const isUnderPace = totalSpent < targetSpend - (totalBudget * 0.05);
 
   const getStatusText = () => {
     if (deficit > 0) {
@@ -94,14 +96,19 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ totalSpent, gearTrave
               )}>
                 {isOverPace ? "Ahead of Pace" : isUnderPace ? "Under Pace" : "On Track"}
               </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-bold">
-                Daily Allowance: {formatCurrency(dailyAllowance).replace('A$', '$')}
+              <p className={cn(
+                "text-xs mt-1 font-bold",
+                paceDifference >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-orange-600 dark:text-orange-400"
+              )}>
+                {paceDifference >= 0 
+                  ? `${formatCurrency(paceDifference).replace('A$', '$')} under target` 
+                  : `${formatCurrency(Math.abs(paceDifference)).replace('A$', '$')} over target`}
               </p>
             </CardContent>
           </Card>
         </TooltipTrigger>
         <TooltipContent className="max-w-xs p-3 rounded-xl">
-          <p className="text-sm">Compares your current spending to where you should be based on the day of the week.</p>
+          <p className="text-sm">Compares your current spending to where you should be based on the day of the week. Target for today: {formatCurrency(targetSpend).replace('A$', '$')}.</p>
         </TooltipContent>
       </Tooltip>
 
