@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -6,7 +8,13 @@ import { Module, Category, UserBudgetConfig } from '@/types/budget';
 import { WeeklyBudgetState } from '@/types/supabase';
 import { formatCurrency } from '@/lib/format';
 import { toast } from 'sonner';
-import { GENERIC_MODULE_ID, WEEKLY_BUDGET_TOTAL, initialModules, FUEL_CATEGORY_ID, GENERIC_CATEGORY_ID, DEFAULT_ANNUAL_INCOME, WEEKS_IN_YEAR } from '@/data/budgetData';
+import { 
+  GENERIC_MODULE_ID, 
+  initialModules, 
+  FUEL_CATEGORY_ID, 
+  DEFAULT_ANNUAL_INCOME, 
+  WEEKS_IN_YEAR 
+} from '@/data/budgetData';
 
 // Helper to generate tokens based on value and denomination
 const generateTokens = (baseId: string, totalValue: number, preferredDenom: number = 10) => {
@@ -83,6 +91,7 @@ const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState> => {
     user_id: userId,
     current_tokens: initialModules,
     gear_travel_fund: 0,
+    annual_income: DEFAULT_ANNUAL_INCOME,
     last_reset_date: new Date().toISOString().split('T')[0],
     updated_at: new Date().toISOString(),
     config: { annualIncome: DEFAULT_ANNUAL_INCOME, calculationMode: 'percentage', payFrequency: 'weekly' }
@@ -118,38 +127,48 @@ export const useBudgetState = () => {
 
   const saveMutation = useMutation({
     mutationFn: async (data: Partial<WeeklyBudgetState>) => {
-      console.log('[useBudgetState] Attempting to save budget state:', data);
+      if (!userId) return;
+      
+      // Clean data to avoid sending columns that might cause PGRST204 errors
+      const payload: any = {
+        user_id: userId,
+        updated_at: new Date().toISOString()
+      };
+
+      if (data.current_tokens) payload.current_tokens = data.current_tokens;
+      if (data.gear_travel_fund !== undefined) payload.gear_travel_fund = data.gear_travel_fund;
+      if (data.annual_income !== undefined) payload.annual_income = data.annual_income;
+      
+      // Only include config if it's explicitly provided and we want to risk it
+      // For now, we'll skip it if it's causing schema cache issues
+      // if (data.config) payload.config = data.config;
+
       const { data: result, error } = await supabase
         .from('weekly_budget_state')
-        .upsert(
-          {
-            user_id: userId!,
-            ...data,
-            updated_at: new Date().toISOString()
-          },
-          { onConflict: 'user_id' }
-        )
+        .upsert(payload, { onConflict: 'user_id' })
         .select();
 
-      if (error) {
-        console.error('[useBudgetState] Save error:', error);
-        throw error;
-      }
-      console.log('[useBudgetState] Save successful:', result);
+      if (error) throw error;
       return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budgetState', userId] });
-      toast.success('Budget strategy saved successfully!');
     },
     onError: (error: any) => {
-      toast.error(`Failed to save strategy: ${error.message}`);
+      console.error('[useBudgetState] Save error:', error);
+      toast.error(`Failed to save: ${error.message}`);
     }
   });
 
   const modules: Module[] = state?.current_tokens || [];
   const gearTravelFund = state?.gear_travel_fund || 0;
-  const config: UserBudgetConfig = state?.config || { annualIncome: DEFAULT_ANNUAL_INCOME, calculationMode: 'percentage', payFrequency: 'weekly' };
+  const annualIncome = state?.annual_income || state?.config?.annualIncome || DEFAULT_ANNUAL_INCOME;
+  
+  const config: UserBudgetConfig = useMemo(() => ({
+    annualIncome,
+    calculationMode: state?.config?.calculationMode || 'percentage',
+    payFrequency: state?.config?.payFrequency || 'weekly'
+  }), [state, annualIncome]);
 
   const totalSpentWeekly = useMemo(() => modules.reduce((total, module) => 
     total + module.categories.reduce((catTotal, category) => {
@@ -257,11 +276,12 @@ export const useBudgetState = () => {
       })
     }));
 
-    return saveMutation.mutateAsync({ 
+    await saveMutation.mutateAsync({ 
       current_tokens: finalModules, 
-      config: { ...config, annualIncome: newIncome } 
+      annual_income: newIncome 
     });
-  }, [config, saveMutation]);
+    toast.success('Budget strategy saved!');
+  }, [saveMutation]);
 
   const handleMondayReset = useCallback(async () => {
     const totalBudget = modules.reduce((sum, m) => sum + m.categories.reduce((cs, c) => c.id !== FUEL_CATEGORY_ID ? cs + c.baseValue : cs, 0), 0);
@@ -281,6 +301,27 @@ export const useBudgetState = () => {
     setBriefingData({ totalSpent: totalSpentWeekly, totalBudget, totalSurplus: Math.max(0, difference), newGearTravelFund: newFund, categoryBriefings: [] });
   }, [modules, totalSpentWeekly, gearTravelFund, saveMutation]);
 
+  const handleFundAdjustment = useCallback(async (amount: number) => {
+    await saveMutation.mutateAsync({ gear_travel_fund: amount });
+  }, [saveMutation]);
+
+  const handleFullReset = useCallback(async () => {
+    const resetModules = modules.map(module => ({
+      ...module,
+      categories: module.categories.map(category => ({
+        ...category,
+        tokens: category.tokens.map(t => ({ ...t, spent: false }))
+      }))
+    }));
+    await saveMutation.mutateAsync({ current_tokens: resetModules, gear_travel_fund: 0 });
+    toast.success('Full reset complete');
+  }, [modules, saveMutation]);
+
+  const resetToInitialBudgets = useCallback(async () => {
+    await saveMutation.mutateAsync({ current_tokens: initialModules });
+    toast.success('Restored initial budgets');
+  }, [saveMutation]);
+
   return {
     modules,
     gearTravelFund,
@@ -295,6 +336,9 @@ export const useBudgetState = () => {
     handleGenericSpend,
     saveStrategy,
     handleMondayReset,
+    handleFundAdjustment,
+    handleFullReset,
+    resetToInitialBudgets,
     refetchSpentToday,
     resetBriefing: briefingData,
     clearBriefing: () => setBriefingData(null),
