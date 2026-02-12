@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useSession } from '@/contexts/SessionContext';
@@ -35,6 +35,10 @@ export const useBudgetState = () => {
   const { user } = useSession();
   const queryClient = useQueryClient();
   const userId = user?.id;
+
+  // State for the Monday Briefing dialog
+  const [resetBriefing, setResetBriefing] = useState<any>(null);
+  const clearBriefing = useCallback(() => setResetBriefing(null), []);
 
   // Helper to get the start of the current budget week (Monday)
   const getStartOfBudgetWeek = useCallback(() => {
@@ -243,6 +247,8 @@ export const useBudgetState = () => {
     totalSpent: totalSpentWeekly,
     spentToday,
     refetchSpentToday,
+    resetBriefing,
+    clearBriefing,
     gearTravelFund: budgetState?.gear_travel_fund || 0,
     config: { 
       annualIncome: budgetState?.annual_income || DEFAULT_ANNUAL_INCOME, 
