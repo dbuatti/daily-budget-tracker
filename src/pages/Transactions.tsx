@@ -1,9 +1,10 @@
 "use client";
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useSession } from '@/contexts/SessionContext';
+import { useBudgetState } from '@/hooks/useBudgetState';
 import { formatCurrency } from '@/lib/format';
 import { format } from 'date-fns';
 import { 
@@ -22,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useNavigate } from 'react-router-dom';
 import { initialModules } from '@/data/budgetData';
+import { Module } from '@/types/budget';
 
 const getCategoryIcon = (categoryId: string | null) => {
   if (!categoryId) return <Zap className="w-5 h-5" />;
@@ -38,45 +40,35 @@ const getCategoryIcon = (categoryId: string | null) => {
   return <DollarSign className="w-5 h-5" />;
 };
 
-const getCategoryName = (tx: any) => {
-  console.log(`[getCategoryName] Inspecting transaction:`, { 
-    id: tx.id, 
-    category_id: tx.category_id, 
-    category_name: tx.category_name,
-    type: tx.transaction_type 
-  });
-
-  // 1. Prioritize the saved category_name from the transaction record
-  if (tx.category_name) {
-    console.log(`[getCategoryName] Found saved name: ${tx.category_name}`);
-    return tx.category_name;
-  }
+const getCategoryName = (tx: any, currentModules: Module[]) => {
+  // 1. Prioritize the saved category_name from the transaction record (if column exists)
+  if (tx.category_name) return tx.category_name;
   
   // 2. Fallback to generic spend if no ID
-  if (!tx.category_id) {
-    console.log(`[getCategoryName] No category ID, falling back to Generic Spend`);
-    return 'Generic Spend';
+  if (!tx.category_id) return 'Generic Spend';
+
+  // 3. Look up in CURRENT live modules (handles "Beauty" and other custom categories)
+  for (const module of currentModules) {
+    const category = module.categories.find(c => c.id === tx.category_id);
+    if (category) return category.name;
   }
   
-  // 3. Fallback to searching initialModules (for older transactions)
+  // 4. Fallback to searching initialModules (for legacy/default categories)
   for (const module of initialModules) {
     const category = module.categories.find(c => c.id === tx.category_id);
-    if (category) {
-      console.log(`[getCategoryName] Found name in initialModules: ${category.name}`);
-      return category.name;
-    }
+    if (category) return category.name;
   }
   
-  // 4. Final fallback
-  console.log(`[getCategoryName] Final fallback to Custom Category`);
+  // 5. Final fallback
   return 'Custom Category';
 };
 
 const Transactions = () => {
   const { user } = useSession();
   const navigate = useNavigate();
+  const { modules: currentModules, isLoading: isBudgetLoading } = useBudgetState();
 
-  const { data: transactions, isLoading } = useQuery({
+  const { data: transactions, isLoading: isTxLoading } = useQuery({
     queryKey: ['transactions', user?.id],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -91,7 +83,7 @@ const Transactions = () => {
     enabled: !!user,
   });
 
-  if (isLoading) {
+  if (isTxLoading || isBudgetLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
@@ -147,7 +139,7 @@ const Transactions = () => {
                   </div>
                   <div className="flex-grow min-w-0">
                     <h3 className="font-bold text-gray-900 dark:text-gray-100 truncate">
-                      {getCategoryName(tx)}
+                      {getCategoryName(tx, currentModules)}
                     </h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       {format(new Date(tx.created_at), 'MMM d, yyyy • h:mm a')}
