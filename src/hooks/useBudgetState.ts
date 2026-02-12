@@ -205,11 +205,12 @@ export const useBudgetState = () => {
     });
   }, [modules, userId, queryClient, deleteTransaction]);
 
-  const handleCustomSpend = useCallback(async (categoryId: string, amount: number) => {
+  const handleCustomSpend = useCallback(async (categoryId: string, amount: number, description?: string) => {
     const { data, error } = await supabase.from('budget_transactions').insert({
       user_id: userId!,
       amount,
       category_id: categoryId,
+      description,
       transaction_type: 'custom_spend'
     }).select().single();
 
@@ -231,8 +232,8 @@ export const useBudgetState = () => {
     });
   }, [userId, queryClient, deleteTransaction]);
 
-  const handleGenericSpend = useCallback(async (amount: number) => {
-    return handleCustomSpend(GENERIC_CATEGORY_ID, amount);
+  const handleGenericSpend = useCallback(async (amount: number, description?: string) => {
+    return handleCustomSpend(GENERIC_CATEGORY_ID, amount, description);
   }, [handleCustomSpend]);
 
   const handleFullReset = useCallback(async () => {

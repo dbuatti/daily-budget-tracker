@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, FileText } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -18,6 +18,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 
 const formSchema = z.object({
   amount: z.number().min(0.01, "Amount must be greater than zero.").max(1000, "Amount cannot exceed $1000."),
+  description: z.string().max(50, "Description too long.").optional(),
 });
 
 type AddTokenFormValues = z.infer<typeof formSchema>;
@@ -25,7 +26,7 @@ type AddTokenFormValues = z.infer<typeof formSchema>;
 interface AddTokenDialogProps {
   categoryId: string;
   categoryName: string;
-  onAddToken: (categoryId: string, amount: number) => void;
+  onAddToken: (categoryId: string, amount: number, description?: string) => void;
 }
 
 const AddTokenDialog: React.FC<AddTokenDialogProps> = ({ categoryId, categoryName, onAddToken }) => {
@@ -35,11 +36,12 @@ const AddTokenDialog: React.FC<AddTokenDialogProps> = ({ categoryId, categoryNam
     resolver: zodResolver(formSchema),
     defaultValues: {
       amount: 0.00,
+      description: '',
     },
   });
 
   const onSubmit = (values: AddTokenFormValues) => {
-    onAddToken(categoryId, values.amount);
+    onAddToken(categoryId, values.amount, values.description);
     form.reset();
     setIsOpen(false);
   };
@@ -61,7 +63,7 @@ const AddTokenDialog: React.FC<AddTokenDialogProps> = ({ categoryId, categoryNam
             Log Custom Spend
           </DialogTitle>
           <DialogDescription className="text-gray-600 dark:text-gray-400">
-            Add an unbudgeted expense to the <span className="font-semibold text-indigo-600 dark:text-indigo-400">{categoryName}</span> category. This may result in a deficit.
+            Add an unbudgeted expense to the <span className="font-semibold text-indigo-600 dark:text-indigo-400">{categoryName}</span> category.
           </DialogDescription>
         </DialogHeader>
         
@@ -83,7 +85,6 @@ const AddTokenDialog: React.FC<AddTokenDialogProps> = ({ categoryId, categoryNam
                         className="pl-7 h-12 rounded-xl text-lg font-medium"
                         {...field}
                         onChange={(e) => {
-                          // Convert input value to a number for the form state
                           const value = parseFloat(e.target.value);
                           field.onChange(isNaN(value) ? 0 : value);
                         }}
@@ -95,9 +96,31 @@ const AddTokenDialog: React.FC<AddTokenDialogProps> = ({ categoryId, categoryNam
                 </FormItem>
               )}
             />
+
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Note (Optional)</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <FileText className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <Input
+                        placeholder="What was this for?"
+                        className="pl-10 h-12 rounded-xl"
+                        {...field}
+                      />
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <Button 
               type="submit" 
-              className="w-full bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold shadow-lg"
+              className="w-full bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold shadow-lg h-12"
               disabled={form.formState.isSubmitting || !form.formState.isValid}
             >
               Log {form.watch('amount') > 0 ? formatCurrency(form.watch('amount')).replace('A$', '$') : 'Spend'}

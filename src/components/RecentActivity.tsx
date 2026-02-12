@@ -3,7 +3,7 @@
 import React from 'react';
 import { formatCurrency } from '@/lib/format';
 import { format } from 'date-fns';
-import { History, ShoppingBag, Car, Home, Heart, Music, Zap, DollarSign, Trash2 } from 'lucide-react';
+import { History, ShoppingBag, Car, Home, Heart, Music, Zap, DollarSign, Trash2, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { BudgetTransaction } from '@/types/supabase';
@@ -62,9 +62,17 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ transactions, modules, 
                   <p className="text-sm font-bold text-gray-900 dark:text-gray-100 truncate">
                     {getCategoryName(tx, modules)}
                   </p>
-                  <p className="text-[10px] text-gray-400">
-                    {format(new Date(tx.created_at), 'h:mm a')}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px] text-gray-400">
+                      {format(new Date(tx.created_at), 'h:mm a')}
+                    </p>
+                    {tx.description && (
+                      <div className="flex items-center gap-1 text-[10px] text-indigo-500 dark:text-indigo-400 font-medium truncate max-w-[100px]">
+                        <FileText className="w-2.5 h-2.5" />
+                        {tx.description}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-3">
