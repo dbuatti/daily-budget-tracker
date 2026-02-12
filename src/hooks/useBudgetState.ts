@@ -64,21 +64,43 @@ const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Mod
     }
   }
 
-  // DEEP DIAGNOSTIC: Log every token in Groceries (A1)
-  const groceries = mergedModules.flatMap(m => m.categories).find(c => c.id === 'A1');
-  if (groceries) {
-    const totalTokenValue = groceries.tokens.reduce((sum, t) => sum + t.value, 0);
-    console.log('[useBudgetState] Groceries (A1) Diagnostic:', {
-      baseValue: groceries.baseValue,
-      sumOfTokens: totalTokenValue,
-      tokenCount: groceries.tokens.length,
-      tokens: groceries.tokens.map(t => ({ id: t.id, val: t.value, spent: t.spent }))
+  // DEEP DIAGNOSTIC & SELF-HEALING
+  mergedModules.forEach(module => {
+    module.categories.forEach(category => {
+      const baseTokens = category.tokens.filter(t => !t.id.startsWith('custom-'));
+      const customTokens = category.tokens.filter(t => t.id.startsWith('custom-'));
+      const sumOfBaseTokens = baseTokens.reduce((sum, t) => sum + t.value, 0);
+      
+      if (category.id === 'A1') {
+        console.log(`[useBudgetState] Groceries (A1) Token Audit:`, {
+          baseValue: category.baseValue,
+          sumOfBase: sumOfBaseTokens,
+          baseTokenCount: baseTokens.length,
+          customTokenCount: customTokens.length,
+          allTokens: category.tokens.map(t => `${t.id}: $${t.value} (${t.spent ? 'spent' : 'unspent'})`)
+        });
+      }
+
+      // Self-healing: If base tokens don't match baseValue, regenerate them while preserving spent amount
+      if (Math.abs(sumOfBaseTokens - category.baseValue) > 0.01) {
+        console.warn(`[useBudgetState] Healing category ${category.name} (${category.id}): Mismatch detected.`);
+        
+        const totalBaseSpent = baseTokens.filter(t => t.spent).reduce((sum, t) => sum + t.value, 0);
+        const freshBaseTokens = generateTokens(category.id, category.baseValue, category.tokenValue || 10);
+        
+        let currentSpent = 0;
+        const healedBaseTokens = freshBaseTokens.map(t => {
+          if (currentSpent < totalBaseSpent) {
+            currentSpent += t.value;
+            return { ...t, spent: true };
+          }
+          return t;
+        });
+
+        category.tokens = [...healedBaseTokens, ...customTokens];
+      }
     });
-    
-    if (Math.abs(totalTokenValue - groceries.baseValue) > 0.01) {
-      console.warn(`[useBudgetState] MISMATCH in Groceries: Budget is ${groceries.baseValue} but tokens sum to ${totalTokenValue}`);
-    }
-  }
+  });
 
   console.log('[useBudgetState] <<< END MERGE');
   return mergedModules;
@@ -153,7 +175,7 @@ export const useBudgetState = () => {
       // Log the payload before sending to Supabase
       if (data.current_tokens) {
         const groceries = data.current_tokens.flatMap(m => m.categories).find(c => c.id === 'A1');
-        console.log('[useBudgetState] PRE-SAVE Groceries Check:', groceries?.tokens.map(t => t.id));
+        console.log('[useBudgetState] PRE-SAVE Groceries Check:', groceries?.tokens.map(t => `${t.id}: $${t.value}`));
       }
 
       const payload: any = { user_id: userId, updated_at: new Date().toISOString() };
@@ -368,7 +390,7 @@ export const useBudgetState = () => {
     await saveMutation.mutateAsync({ gear_travel_fund: amount });
   }, [saveMutation]);
 
-  const handleFullReset = useCallback(async () => {
+  const handleFullReset = useCallback(async (amount: number = 0) => {
     console.log('[useBudgetState] Performing FULL Reset...');
     const resetModules = modules.map(module => ({
       ...module,
@@ -379,7 +401,7 @@ export const useBudgetState = () => {
           .map(t => ({ ...t, spent: false }))
       }))
     }));
-    await saveMutation.mutateAsync({ current_tokens: resetModules, gear_travel_fund: 0 });
+    await saveMutation.mutateAsync({ current_tokens: resetModules, gear_travel_fund: amount });
     toast.success('Full reset complete');
   }, [modules, saveMutation]);
 
