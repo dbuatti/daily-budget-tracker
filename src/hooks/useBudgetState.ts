@@ -8,7 +8,7 @@ import { Module, Category, Token } from '@/types/budget';
 import { WeeklyBudgetState, BudgetTransaction } from '@/types/supabase';
 import { formatCurrency } from '@/lib/format';
 import { toast } from 'sonner';
-import { startOfWeek, format, isAfter, isBefore, parseISO, startOfDay } from 'date-fns';
+import { startOfWeek, format, isAfter, parseISO, startOfDay } from 'date-fns';
 import { 
   GENERIC_CATEGORY_ID,
   initialModules, 
@@ -36,18 +36,14 @@ export const useBudgetState = () => {
   const queryClient = useQueryClient();
   const userId = user?.id;
 
-  // State for the Monday Briefing dialog
   const [resetBriefing, setResetBriefing] = useState<any>(null);
   const clearBriefing = useCallback(() => setResetBriefing(null), []);
 
-  // Helper to get the start of the current budget week (Monday 12:00 AM)
   const getStartOfBudgetWeek = useCallback(() => {
-    // weekStartsOn: 1 is Monday
     const monday = startOfWeek(new Date(), { weekStartsOn: 1 });
     return format(monday, 'yyyy-MM-dd');
   }, []);
 
-  // 1. Fetch the Budget Configuration
   const { data: budgetState, isLoading: isStateLoading, isError } = useQuery({
     queryKey: ['budgetState', userId],
     queryFn: async () => {
@@ -60,35 +56,24 @@ export const useBudgetState = () => {
       if (error && error.code !== 'PGRST116') throw error;
       
       if (!data) {
-        const defaultResetDate = getStartOfBudgetWeek();
-        console.log('[useBudgetState] No budget state found, using defaults. Reset date:', defaultResetDate);
         return { 
           user_id: userId!, 
           current_tokens: initialModules, 
           gear_travel_fund: 0, 
           annual_income: DEFAULT_ANNUAL_INCOME,
-          last_reset_date: defaultResetDate,
+          last_reset_date: getStartOfBudgetWeek(),
           updated_at: new Date().toISOString()
         } as WeeklyBudgetState;
       }
-      
-      console.log('[useBudgetState] Fetched budget state:', {
-        last_reset_date: data.last_reset_date,
-        annual_income: data.annual_income,
-        category_count: data.current_tokens?.reduce((acc: number, m: any) => acc + m.categories.length, 0)
-      });
       return data as WeeklyBudgetState;
     },
     enabled: !!userId,
   });
 
-  // 2. Fetch ALL transactions since the last reset date
   const { data: transactions = [], isLoading: isTxLoading } = useQuery({
     queryKey: ['budgetTransactions', userId, budgetState?.last_reset_date],
     queryFn: async () => {
       if (!budgetState?.last_reset_date) return [];
-      
-      console.log(`[useBudgetState] Fetching transactions since: ${budgetState.last_reset_date}`);
       
       const { data, error } = await supabase
         .from('budget_transactions')
@@ -97,51 +82,29 @@ export const useBudgetState = () => {
         .gte('created_at', budgetState.last_reset_date)
         .order('created_at', { ascending: true });
       
-      if (error) {
-        console.error('[useBudgetState] Error fetching transactions:', error);
-        throw error;
-      }
-      
-      console.log(`[useBudgetState] DB returned ${data?.length || 0} transactions >= ${budgetState.last_reset_date}`);
+      if (error) throw error;
       return data as BudgetTransaction[];
     },
     enabled: !!userId && !!budgetState?.last_reset_date,
   });
 
-  // 3. Derive the UI Modules with correct spent status
   const modules = useMemo(() => {
     if (!budgetState) return [];
 
     const resetDate = startOfDay(parseISO(budgetState.last_reset_date));
-    console.log(`[useBudgetState] Recalculating modules. Reset Date: ${format(resetDate, 'yyyy-MM-dd HH:mm:ss')}`);
-    
     const baseModules: Module[] = JSON.parse(JSON.stringify(budgetState.current_tokens));
 
-    const processedModules = baseModules.map(module => ({
+    return baseModules.map(module => ({
       ...module,
       categories: module.categories.map(category => {
-        // Filter transactions for this category that occurred ON or AFTER the reset date
         const categoryTransactions = transactions.filter(t => {
           const txDate = parseISO(t.created_at);
-          const isMatch = t.category_id === category.id && (isAfter(txDate, resetDate) || txDate.getTime() === resetDate.getTime());
-          
-          if (t.category_id === category.id && !isMatch) {
-            console.log(`[useBudgetState] EXCLUDING transaction for ${category.name}: ${formatCurrency(t.amount)} at ${t.created_at} (Before reset date ${budgetState.last_reset_date})`);
-          }
-          
-          return isMatch;
+          return t.category_id === category.id && (isAfter(txDate, resetDate) || txDate.getTime() === resetDate.getTime());
         });
 
         const totalSpentAmount = categoryTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
-
-        if (totalSpentAmount > 0) {
-          console.log(`[useBudgetState] Category ${category.name} (${category.id}): Including ${categoryTransactions.length} transactions totaling ${formatCurrency(totalSpentAmount)}`);
-        }
-
-        // Regenerate tokens to ensure they match the baseValue (Initial Budget)
         const freshTokens = generateTokens(category.id, category.baseValue, category.tokenValue || 10);
         
-        // Mark tokens as spent based on the total spent amount
         let remainingSpentPool = totalSpentAmount;
         const updatedTokens = freshTokens.map(token => {
           if (remainingSpentPool >= token.value - 0.001) {
@@ -154,7 +117,6 @@ export const useBudgetState = () => {
           return token;
         });
 
-        // If there's still money in the pool (overspent), we add "overage" tokens for visual feedback
         if (remainingSpentPool > 0.01) {
           updatedTokens.push({
             id: `${category.id}-overage-${Date.now()}`,
@@ -163,29 +125,21 @@ export const useBudgetState = () => {
           });
         }
 
-        return {
-          ...category,
-          tokens: updatedTokens
-        };
+        return { ...category, tokens: updatedTokens };
       })
     }));
-
-    return processedModules;
   }, [budgetState, transactions]);
 
-  // 4. Calculate Totals
   const totalSpentWeekly = useMemo(() => {
     if (!budgetState) return 0;
     const resetDate = startOfDay(parseISO(budgetState.last_reset_date));
     
-    const total = transactions
+    return transactions
       .filter(t => {
         const txDate = parseISO(t.created_at);
         return t.category_id !== FUEL_CATEGORY_ID && (isAfter(txDate, resetDate) || txDate.getTime() === resetDate.getTime());
       })
       .reduce((sum, t) => sum + Number(t.amount), 0);
-    
-    return total;
   }, [transactions, budgetState]);
 
   const { data: spentToday = 0, refetch: refetchSpentToday } = useQuery({
@@ -282,12 +236,7 @@ export const useBudgetState = () => {
 
   const handleMondayReset = useCallback(async () => {
     const mondayDate = getStartOfBudgetWeek();
-    console.log(`[useBudgetState] Manually resetting budget week to Monday: ${mondayDate}`);
-    
-    await saveMutation.mutateAsync({ 
-      last_reset_date: mondayDate 
-    });
-    
+    await saveMutation.mutateAsync({ last_reset_date: mondayDate });
     toast.success(`Budget week reset to Monday, ${mondayDate}`);
   }, [saveMutation, getStartOfBudgetWeek]);
 
