@@ -178,6 +178,8 @@ export const useBudgetState = () => {
     const amount = token?.value || 0;
     const categoryName = category?.name || 'Unknown Category';
 
+    console.log(`[handleTokenSpend] Logging spend:`, { categoryId, categoryName, amount });
+
     const updatedModules = modules.map(module => ({
       ...module,
       categories: module.categories.map(category => {
@@ -191,13 +193,19 @@ export const useBudgetState = () => {
       })
     }));
 
-    await supabase.from('budget_transactions').insert({
+    const { error: txError } = await supabase.from('budget_transactions').insert({
       user_id: userId!,
       amount,
       category_id: categoryId,
-      category_name: categoryName, // Save the actual name
+      category_name: categoryName,
       transaction_type: 'token_spend'
     });
+
+    if (txError) {
+      console.error(`[handleTokenSpend] Transaction insert error:`, txError);
+    } else {
+      console.log(`[handleTokenSpend] Transaction inserted successfully for ${categoryName}`);
+    }
 
     await saveMutation.mutateAsync({ current_tokens: updatedModules });
     toast.success(`Logged ${formatCurrency(amount)} for ${categoryName}`);
@@ -207,6 +215,8 @@ export const useBudgetState = () => {
   const handleCustomSpend = useCallback(async (categoryId: string, amount: number) => {
     const category = modules.flatMap(m => m.categories).find(c => c.id === categoryId);
     const categoryName = category?.name || 'Unknown Category';
+
+    console.log(`[handleCustomSpend] Logging custom spend:`, { categoryId, categoryName, amount });
 
     const updatedModules = modules.map(module => ({
       ...module,
@@ -219,13 +229,19 @@ export const useBudgetState = () => {
       })
     }));
 
-    await supabase.from('budget_transactions').insert({
+    const { error: txError } = await supabase.from('budget_transactions').insert({
       user_id: userId!,
       amount,
       category_id: categoryId,
-      category_name: categoryName, // Save the actual name
+      category_name: categoryName,
       transaction_type: 'custom_spend'
     });
+
+    if (txError) {
+      console.error(`[handleCustomSpend] Transaction insert error:`, txError);
+    } else {
+      console.log(`[handleCustomSpend] Transaction inserted successfully for ${categoryName}`);
+    }
 
     await saveMutation.mutateAsync({ current_tokens: updatedModules });
     toast.success(`Logged custom spend: ${formatCurrency(amount)} in ${categoryName}`);

@@ -39,19 +39,36 @@ const getCategoryIcon = (categoryId: string | null) => {
 };
 
 const getCategoryName = (tx: any) => {
+  console.log(`[getCategoryName] Inspecting transaction:`, { 
+    id: tx.id, 
+    category_id: tx.category_id, 
+    category_name: tx.category_name,
+    type: tx.transaction_type 
+  });
+
   // 1. Prioritize the saved category_name from the transaction record
-  if (tx.category_name) return tx.category_name;
+  if (tx.category_name) {
+    console.log(`[getCategoryName] Found saved name: ${tx.category_name}`);
+    return tx.category_name;
+  }
   
   // 2. Fallback to generic spend if no ID
-  if (!tx.category_id) return 'Generic Spend';
+  if (!tx.category_id) {
+    console.log(`[getCategoryName] No category ID, falling back to Generic Spend`);
+    return 'Generic Spend';
+  }
   
   // 3. Fallback to searching initialModules (for older transactions)
   for (const module of initialModules) {
     const category = module.categories.find(c => c.id === tx.category_id);
-    if (category) return category.name;
+    if (category) {
+      console.log(`[getCategoryName] Found name in initialModules: ${category.name}`);
+      return category.name;
+    }
   }
   
   // 4. Final fallback
+  console.log(`[getCategoryName] Final fallback to Custom Category`);
   return 'Custom Category';
 };
 
