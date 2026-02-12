@@ -3,6 +3,7 @@ import { useBudgetState } from '@/hooks/useBudgetState';
 import DashboardHeader from './DashboardHeader';
 import ModuleSection from './ModuleSection';
 import DebugActions from './DebugActions';
+import BudgetArchitect from './BudgetArchitect';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
@@ -14,10 +15,12 @@ const WeeklyDashboard: React.FC = () => {
     modules, 
     gearTravelFund, 
     totalSpent, 
+    config,
     isLoading, 
     isError,
     handleTokenSpend, 
-    handleMondayReset 
+    handleMondayReset,
+    saveStrategy
   } = useBudgetState();
 
   if (isLoading) {
@@ -56,22 +59,28 @@ const WeeklyDashboard: React.FC = () => {
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
-      <h1 className="text-4xl font-extrabold text-center mb-8 text-indigo-900 dark:text-indigo-200">
-        Weekly Permissions Dashboard
-      </h1>
+      <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+        <h1 className="text-4xl font-extrabold text-indigo-900 dark:text-indigo-200">
+          Weekly Permissions
+        </h1>
+        <BudgetArchitect 
+          initialIncome={config.annualIncome} 
+          initialModules={modules} 
+          onSave={saveStrategy} 
+        />
+      </div>
 
       <DashboardHeader 
         totalSpent={totalSpent} 
         gearTravelFund={gearTravelFund} 
       />
 
-      {/* Minimalist Progress Bar showing remaining weekly budget */}
       <div className="mt-4 rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
         <BudgetRemainingBar spent={totalSpent} total={WEEKLY_BUDGET_TOTAL} className="border border-gray-200 dark:border-gray-700" />
       </div>
 
-      <div className="flex justify-end items-center space-x-4 mb-6">
-        <DebugActions /> {/* Use DebugActions here */}
+      <div className="flex justify-end items-center space-x-4 mb-6 mt-6">
+        <DebugActions />
         <Button 
           onClick={handleMondayReset} 
           className="bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg transition-transform active:scale-[0.98] font-semibold"
