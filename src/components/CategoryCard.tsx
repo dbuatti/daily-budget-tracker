@@ -15,33 +15,38 @@ interface CategoryCardProps {
 const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) => {
   const { handleCustomSpend } = useBudgetState();
   
-  const totalTokenValue = category.tokens.reduce((sum, token) => sum + token.value, 0);
-  const initialWeeklyBudget = Math.max(category.baseValue || 0, totalTokenValue);
+  // The "Initial Budget" is the static baseValue from settings
+  const initialWeeklyBudget = category.baseValue || 0;
 
+  // Calculate total spent in this category from the tokens (which are now derived from transactions)
   const totalSpentInThisCategory = category.tokens
     .filter(t => t.spent)
     .reduce((sum, token) => sum + token.value, 0);
 
-  let displayBudget = initialWeeklyBudget;
-  let currentStatus = initialWeeklyBudget - totalSpentInThisCategory;
+  let displayInitialBudget = initialWeeklyBudget;
   let statusLabel = "Initial Budget";
 
+  // Special handling for Fuel (4-week cycle)
   if (category.id === FUEL_CATEGORY_ID) {
-    displayBudget = initialWeeklyBudget * 4;
-    currentStatus = displayBudget - totalSpentInThisCategory;
+    displayInitialBudget = initialWeeklyBudget * 4;
     statusLabel = "4-Week Budget";
   }
+
+  const currentStatus = displayInitialBudget - totalSpentInThisCategory;
+  const isOverspent = currentStatus < 0;
 
   return (
     <Card className="rounded-2xl shadow-xl border-2 border-indigo-200 dark:border-indigo-800/70 bg-white dark:bg-gray-900/50">
       <CardHeader className="pb-3 border-b border-indigo-100 dark:border-indigo-900/50">
         <CardTitle className="text-xl font-bold text-indigo-800 dark:text-indigo-300 flex justify-between items-center mb-1">
           <span>{category.name}</span>
-          <span className={`text-lg font-extrabold ${currentStatus < 0 ? 'text-red-600' : 'text-green-600'}`}>
+          <span className={`text-lg font-extrabold ${isOverspent ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
             {formatCurrency(currentStatus).replace('A$', '$')}
           </span>
         </CardTitle>
-        <p className="text-xs text-gray-500">{statusLabel}: {formatCurrency(displayBudget).replace('A$', '$')}</p>
+        <p className="text-xs text-gray-500">
+          {statusLabel}: <span className="font-semibold">{formatCurrency(displayInitialBudget).replace('A$', '$')}</span>
+        </p>
       </CardHeader>
       <CardContent className="flex flex-wrap gap-4 p-4">
         {category.tokens.map((token) => (
