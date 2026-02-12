@@ -20,7 +20,8 @@ import {
   DollarSign,
   Search,
   Filter,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -62,7 +63,7 @@ const getCategoryName = (tx: any, currentModules: Module[]) => {
 const Transactions = () => {
   const { user } = useSession();
   const navigate = useNavigate();
-  const { modules: currentModules, isLoading: isBudgetLoading } = useBudgetState();
+  const { modules: currentModules, isLoading: isBudgetLoading, deleteTransaction } = useBudgetState();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
 
@@ -211,7 +212,7 @@ const Transactions = () => {
               </h2>
               <div className="space-y-3">
                 {group.items.map((tx) => (
-                  <Card key={tx.id} className="rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-900/50 hover:shadow-md transition-shadow overflow-hidden">
+                  <Card key={tx.id} className="rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-900/50 hover:shadow-md transition-shadow overflow-hidden group">
                     <CardContent className="p-0">
                       <div className="flex items-center p-4">
                         <div className="h-12 w-12 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 mr-4 shrink-0">
@@ -225,13 +226,23 @@ const Transactions = () => {
                             {format(new Date(tx.created_at), 'h:mm a')}
                           </p>
                         </div>
-                        <div className="text-right ml-4">
-                          <p className="text-lg font-black text-indigo-700 dark:text-indigo-300">
-                            {formatCurrency(tx.amount).replace('A$', '$')}
-                          </p>
-                          <p className="text-[10px] uppercase tracking-widest font-bold text-gray-400">
-                            {tx.transaction_type.replace('_', ' ')}
-                          </p>
+                        <div className="text-right ml-4 flex items-center gap-4">
+                          <div>
+                            <p className="text-lg font-black text-indigo-700 dark:text-indigo-300">
+                              {formatCurrency(tx.amount).replace('A$', '$')}
+                            </p>
+                            <p className="text-[10px] uppercase tracking-widest font-bold text-gray-400">
+                              {tx.transaction_type.replace('_', ' ')}
+                            </p>
+                          </div>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => tx.id && deleteTransaction(tx.id)}
+                            className="h-8 w-8 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
                       </div>
                     </CardContent>

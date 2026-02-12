@@ -164,13 +164,24 @@ export const useBudgetState = () => {
   });
 
   const deleteTransaction = useCallback(async (id: string) => {
+    console.log('[useBudgetState] Attempting to delete transaction:', id);
     const { error } = await supabase.from('budget_transactions').delete().eq('id', id);
+    
     if (error) {
+      console.error('[useBudgetState] Delete error:', error);
       toast.error("Failed to undo: " + error.message);
       return;
     }
-    queryClient.invalidateQueries({ queryKey: ['budgetTransactions', userId] });
-    queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
+    
+    console.log('[useBudgetState] Delete successful, invalidating queries...');
+    // Invalidate all related queries to ensure UI consistency
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['budgetTransactions', userId] }),
+      queryClient.invalidateQueries({ queryKey: ['transactions', userId] }), // For the History page
+      queryClient.invalidateQueries({ queryKey: ['spentToday', userId] }),
+      queryClient.invalidateQueries({ queryKey: ['budgetState', userId] })
+    ]);
+    
     toast.success("Transaction undone");
   }, [userId, queryClient]);
 
@@ -194,6 +205,7 @@ export const useBudgetState = () => {
 
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['budgetTransactions', userId] }),
+      queryClient.invalidateQueries({ queryKey: ['transactions', userId] }),
       queryClient.invalidateQueries({ queryKey: ['spentToday', userId] })
     ]);
     
@@ -221,6 +233,7 @@ export const useBudgetState = () => {
 
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['budgetTransactions', userId] }),
+      queryClient.invalidateQueries({ queryKey: ['transactions', userId] }),
       queryClient.invalidateQueries({ queryKey: ['spentToday', userId] })
     ]);
     
