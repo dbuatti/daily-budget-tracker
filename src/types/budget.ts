@@ -4,11 +4,21 @@ export interface Token {
   spent: boolean;
 }
 
+export interface UserBudgetConfig {
+  annualIncome: number;
+  calculationMode: 'fixed' | 'percentage';
+  payFrequency: 'weekly' | 'fortnightly';
+  taxRate?: number;
+}
+
 export interface Category {
   id: string;
   name: string;
   tokens: Token[];
-  baseValue: number; // New field: The original weekly budget for this category
+  baseValue: number;      // The actual $ amount for the week
+  percentage?: number;    // The % of weekly income if in percentage mode
+  isCustom?: boolean;     // To distinguish between core and user-added categories
+  tokenValue?: 5 | 10 | 20; // Preferred denomination for token generation
 }
 
 export interface Module {

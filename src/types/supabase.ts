@@ -1,4 +1,4 @@
-import { Module } from "./budget";
+import { Module, UserBudgetConfig } from "./budget";
 
 export interface WeeklyBudgetState {
   user_id: string;
@@ -6,6 +6,7 @@ export interface WeeklyBudgetState {
   gear_travel_fund: number;
   last_reset_date: string; // ISO date string
   updated_at: string;
+  config?: UserBudgetConfig;
 }
 
 export interface BudgetTransaction {
@@ -20,4 +21,6 @@ export interface UserProfile {
   id: string;
   timezone: string;
   day_rollover_hour: number;
+  annual_income?: number;
+  calculation_mode?: 'fixed' | 'percentage';
 }
