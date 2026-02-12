@@ -3,13 +3,14 @@ import { useBudgetState } from '@/hooks/useBudgetState';
 import ModuleSection from '@/components/ModuleSection';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
 import MondayBriefingDialog from '@/components/MondayBriefingDialog';
-import { Loader2, Bug, RefreshCw, Terminal, AlertCircle } from 'lucide-react';
+import { Loader2, Bug, RefreshCw, Terminal, AlertCircle, Calendar } from 'lucide-react';
 import { GENERIC_MODULE_ID } from '@/data/budgetData';
 import { formatCurrency } from '@/lib/format';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { parseISO, startOfDay, isAfter } from 'date-fns';
 
 const LogTransaction = () => {
   const { 
@@ -30,6 +31,7 @@ const LogTransaction = () => {
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [isDebugLoading, setIsDebugLoading] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
+  const [currentResetDate, setCurrentResetDate] = useState<string | null>(null);
 
   const addLog = useCallback((message: string) => {
     const timestamp = new Date().toISOString();
@@ -85,6 +87,7 @@ const LogTransaction = () => {
         addLog(`Error fetching budget state: ${stateError.message}`);
       } else {
         addLog(`Budget State: last_reset_date=${budgetState.last_reset_date}`);
+        setCurrentResetDate(budgetState.last_reset_date);
       }
 
       const { data: profileData, error: profileError } = await supabase
@@ -132,23 +135,6 @@ const LogTransaction = () => {
 
       addLog(`Transactions since reset (${resetDate}): ${weeklyTx?.length || 0}`);
 
-      if (weeklyTx) {
-        for (const tx of weeklyTx) {
-          const txDate = new Date(tx.created_at);
-          const txDateInUserTZ = new Intl.DateTimeFormat('en-US', {
-            timeZone: timezone,
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false
-          }).format(txDate);
-          addLog(`Tx ${tx.id.slice(0,8)}: ${tx.category_id} | ${formatCurrency(tx.amount)} at ${txDateInUserTZ}`);
-        }
-      }
-
     } catch (err) {
       addLog(`Debug error: ${String(err)}`);
       console.error('Debug error:', err);
@@ -160,6 +146,7 @@ const LogTransaction = () => {
 
   useEffect(() => {
     fetchRawTransactions();
+    runDebugChecks();
   }, []);
 
   useEffect(() => {
@@ -297,27 +284,14 @@ const LogTransaction = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="p-3 bg-orange-100 dark:bg-orange-900/50 rounded-lg border border-orange-200 dark:border-orange-800">
-            <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">User Profile & State</h4>
+            <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2 flex items-center">
+              <Calendar className="w-4 h-4 mr-2" /> Budget Reset Date
+            </h4>
             <div className="text-xs space-y-1 text-orange-900 dark:text-orange-200">
-              <p><strong>Timezone:</strong> {profile?.timezone || 'Loading...'}</p>
-              <p><strong>Day Rollover Hour:</strong> {profile?.day_rollover_hour || 0}</p>
-              <p><strong>Weekly Reset Date:</strong> {logs.find(l => l.includes('Budget State: last_reset_date='))?.split('=')[1] || 'Unknown'}</p>
+              <p><strong>Current Reset Date:</strong> {currentResetDate || 'Loading...'}</p>
+              <p className="text-[10px] opacity-70 italic">Transactions before this date are ignored for the current weekly view.</p>
             </div>
           </div>
-
-          {debugInfo && (
-            <div className="p-3 bg-orange-100 dark:bg-orange-900/50 rounded-lg border border-orange-200 dark:border-orange-800">
-              <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">Daily Spend RPC Result</h4>
-              <div className="text-xs space-y-1 text-orange-900 dark:text-orange-200">
-                <p><strong>Target Date:</strong> {debugInfo.debug_info?.target_date}</p>
-                <p><strong>Boundaries:</strong></p>
-                <p className="ml-2">Start: {new Date(debugInfo.boundaries?.start_time).toLocaleString()}</p>
-                <p className="ml-2">End: {new Date(debugInfo.boundaries?.end_time).toLocaleString()}</p>
-                <p><strong>Spent Amount:</strong> {formatCurrency(debugInfo.spent_amount || 0)}</p>
-                <p><strong>Transaction Count:</strong> {debugInfo.transaction_count}</p>
-              </div>
-            </div>
-          )}
 
           <div className="overflow-hidden rounded-lg border border-orange-200 dark:border-orange-800">
             <div className="bg-orange-100 dark:bg-orange-900/50 p-2">
@@ -340,23 +314,22 @@ const LogTransaction = () => {
                   </thead>
                   <tbody>
                     {rawTransactions.map((tx) => {
-                      const txDate = new Date(tx.created_at);
-                      const resetDateStr = logs.find(l => l.includes('Budget State: last_reset_date='))?.split('=')[1];
-                      const resetDate = resetDateStr ? new Date(resetDateStr) : null;
-                      const isThisWeek = resetDate ? txDate >= resetDate : false;
+                      const txDate = parseISO(tx.created_at);
+                      const resetDate = currentResetDate ? startOfDay(parseISO(currentResetDate)) : null;
+                      const isThisWeek = resetDate ? (isAfter(txDate, resetDate) || txDate.getTime() === resetDate.getTime()) : false;
                       
                       return (
                         <tr key={tx.id} className="border-t border-orange-100 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-orange-900/20">
                           <td className="p-2 font-bold text-orange-900 dark:text-orange-100">{formatCurrency(tx.amount)}</td>
                           <td className="p-2 text-orange-800 dark:text-orange-200 font-mono">{tx.category_id || 'GENERIC'}</td>
                           <td className="p-2 font-mono text-orange-700 dark:text-orange-300">
-                            {txDate.toLocaleString()}
+                            {tx.created_at}
                           </td>
                           <td className="p-2">
                             {isThisWeek ? (
                               <span className="text-green-600 dark:text-green-400 font-semibold">CURRENT WEEK</span>
                             ) : (
-                              <span className="text-gray-400">PAST WEEK</span>
+                              <span className="text-red-400 font-medium">PAST WEEK (Ignored)</span>
                             )}
                           </td>
                         </tr>

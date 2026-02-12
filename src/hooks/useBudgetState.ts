@@ -8,7 +8,7 @@ import { Module, Category, Token } from '@/types/budget';
 import { WeeklyBudgetState, BudgetTransaction } from '@/types/supabase';
 import { formatCurrency } from '@/lib/format';
 import { toast } from 'sonner';
-import { startOfWeek, format } from 'date-fns';
+import { startOfWeek, format, isAfter, isBefore, parseISO, startOfDay } from 'date-fns';
 import { 
   GENERIC_CATEGORY_ID,
   initialModules, 
@@ -89,6 +89,8 @@ export const useBudgetState = () => {
       
       console.log(`[useBudgetState] Fetching transactions since: ${budgetState.last_reset_date}`);
       
+      // We fetch with a slightly wider range to ensure we don't miss anything due to TZ offsets,
+      // but we filter strictly in the useMemo below.
       const { data, error } = await supabase
         .from('budget_transactions')
         .select('*')
@@ -101,13 +103,7 @@ export const useBudgetState = () => {
         throw error;
       }
       
-      console.log(`[useBudgetState] Found ${data?.length || 0} transactions since reset date.`);
-      if (data && data.length > 0) {
-        data.forEach((tx, i) => {
-          console.log(`  Tx ${i}: ${tx.category_id} | ${formatCurrency(tx.amount)} | ${tx.created_at}`);
-        });
-      }
-      
+      console.log(`[useBudgetState] DB returned ${data?.length || 0} transactions >= ${budgetState.last_reset_date}`);
       return data as BudgetTransaction[];
     },
     enabled: !!userId && !!budgetState?.last_reset_date,
@@ -117,18 +113,30 @@ export const useBudgetState = () => {
   const modules = useMemo(() => {
     if (!budgetState) return [];
 
-    console.log('[useBudgetState] Recalculating modules and token status...');
+    const resetDate = startOfDay(parseISO(budgetState.last_reset_date));
+    console.log(`[useBudgetState] Recalculating modules. Reset Date: ${format(resetDate, 'yyyy-MM-dd HH:mm:ss')}`);
+    
     const baseModules: Module[] = JSON.parse(JSON.stringify(budgetState.current_tokens));
 
     const processedModules = baseModules.map(module => ({
       ...module,
       categories: module.categories.map(category => {
-        // Calculate total spent in this category from transactions
-        const categoryTransactions = transactions.filter(t => t.category_id === category.id);
+        // Filter transactions for this category that occurred ON or AFTER the reset date
+        const categoryTransactions = transactions.filter(t => {
+          const txDate = parseISO(t.created_at);
+          const isMatch = t.category_id === category.id && (isAfter(txDate, resetDate) || txDate.getTime() === resetDate.getTime());
+          
+          if (t.category_id === category.id && !isMatch) {
+            console.log(`[useBudgetState] EXCLUDING transaction for ${category.name}: ${formatCurrency(t.amount)} at ${t.created_at} (Before reset date ${budgetState.last_reset_date})`);
+          }
+          
+          return isMatch;
+        });
+
         const totalSpentAmount = categoryTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
 
         if (totalSpentAmount > 0) {
-          console.log(`[useBudgetState] Category ${category.name} (${category.id}): Spent ${formatCurrency(totalSpentAmount)} across ${categoryTransactions.length} transactions.`);
+          console.log(`[useBudgetState] Category ${category.name} (${category.id}): Including ${categoryTransactions.length} transactions totaling ${formatCurrency(totalSpentAmount)}`);
         }
 
         // Regenerate tokens to ensure they match the baseValue (Initial Budget)
@@ -141,7 +149,6 @@ export const useBudgetState = () => {
             remainingSpentPool -= token.value;
             return { ...token, spent: true };
           } else if (remainingSpentPool > 0) {
-            // Partial spend marks the token as spent for now (simplification)
             remainingSpentPool = 0;
             return { ...token, spent: true };
           }
@@ -169,24 +176,24 @@ export const useBudgetState = () => {
 
   // 4. Calculate Totals
   const totalSpentWeekly = useMemo(() => {
+    if (!budgetState) return 0;
+    const resetDate = startOfDay(parseISO(budgetState.last_reset_date));
+    
     const total = transactions
-      .filter(t => t.category_id !== FUEL_CATEGORY_ID)
+      .filter(t => {
+        const txDate = parseISO(t.created_at);
+        return t.category_id !== FUEL_CATEGORY_ID && (isAfter(txDate, resetDate) || txDate.getTime() === resetDate.getTime());
+      })
       .reduce((sum, t) => sum + Number(t.amount), 0);
     
-    console.log(`[useBudgetState] Total Weekly Spend (excluding fuel): ${formatCurrency(total)}`);
     return total;
-  }, [transactions]);
+  }, [transactions, budgetState]);
 
   const { data: spentToday = 0, refetch: refetchSpentToday } = useQuery({
     queryKey: ['spentToday', userId],
     queryFn: async () => {
-      console.log('[useBudgetState] Calling get_daily_spent_amount RPC...');
       const { data, error } = await supabase.rpc('get_daily_spent_amount', { p_user_id: userId });
-      if (error) {
-        console.error('[useBudgetState] RPC Error:', error);
-        throw error;
-      }
-      console.log(`[useBudgetState] RPC returned daily spend: ${data}`);
+      if (error) throw error;
       return Number(data || 0);
     },
     enabled: !!userId,
@@ -194,12 +201,10 @@ export const useBudgetState = () => {
 
   const saveMutation = useMutation({
     mutationFn: async (data: Partial<WeeklyBudgetState>) => {
-      console.log('[useBudgetState] Saving budget state update:', data);
       const payload = { ...data, user_id: userId, updated_at: new Date().toISOString() };
       return await supabase.from('weekly_budget_state').upsert(payload, { onConflict: 'user_id' });
     },
     onSuccess: () => {
-      console.log('[useBudgetState] Save successful, invalidating queries.');
       queryClient.invalidateQueries({ queryKey: ['budgetState', userId] });
       queryClient.invalidateQueries({ queryKey: ['budgetTransactions', userId] });
       queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
@@ -210,12 +215,7 @@ export const useBudgetState = () => {
     const category = modules.flatMap(m => m.categories).find(c => c.id === catId);
     const token = category?.tokens.find(t => t.id === tokenId);
     
-    if (!token || token.spent) {
-      console.warn(`[useBudgetState] Attempted to spend invalid or already spent token: ${tokenId}`);
-      return;
-    }
-
-    console.log(`[useBudgetState] Logging token spend: ${catId} | ${token.value}`);
+    if (!token || token.spent) return;
 
     const { error } = await supabase.from('budget_transactions').insert({
       user_id: userId!,
@@ -225,12 +225,10 @@ export const useBudgetState = () => {
     });
 
     if (error) {
-      console.error('[useBudgetState] Failed to insert transaction:', error);
       toast.error("Failed to log spend: " + error.message);
       return;
     }
 
-    // Invalidate all related queries to ensure UI updates immediately
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['budgetTransactions', userId] }),
       queryClient.invalidateQueries({ queryKey: ['spentToday', userId] })
@@ -240,10 +238,6 @@ export const useBudgetState = () => {
   }, [modules, userId, queryClient]);
 
   const handleCustomSpend = useCallback(async (categoryId: string, amount: number) => {
-    const category = modules.flatMap(m => m.categories).find(c => c.id === categoryId);
-    
-    console.log(`[useBudgetState] Logging custom spend: ${categoryId} | ${amount}`);
-
     const { error } = await supabase.from('budget_transactions').insert({
       user_id: userId!,
       amount,
@@ -252,7 +246,6 @@ export const useBudgetState = () => {
     });
 
     if (error) {
-      console.error('[useBudgetState] Failed to insert custom transaction:', error);
       toast.error("Failed to log custom spend: " + error.message);
       return;
     }
@@ -263,14 +256,13 @@ export const useBudgetState = () => {
     ]);
     
     toast.success(`Logged ${formatCurrency(amount)} custom spend`);
-  }, [modules, userId, queryClient]);
+  }, [userId, queryClient]);
 
   const handleGenericSpend = useCallback(async (amount: number) => {
     return handleCustomSpend(GENERIC_CATEGORY_ID, amount);
   }, [handleCustomSpend]);
 
   const handleFullReset = useCallback(async () => {
-    console.log('[useBudgetState] Performing full reset...');
     await saveMutation.mutateAsync({ 
       current_tokens: initialModules,
       gear_travel_fund: 0,
