@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, DollarSign, Zap } from 'lucide-react';
+import { LayoutDashboard, DollarSign, Zap, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { MadeWithDyad } from '@/components/made-with-dyad';
@@ -55,6 +55,11 @@ const DesktopSidebar: React.FC = () => {
           to="/dashboard" 
           label="Weekly Dashboard" 
           icon={<LayoutDashboard className="w-5 h-5" />} 
+        />
+        <NavItem 
+          to="/transactions" 
+          label="History" 
+          icon={<History className="w-5 h-5" />} 
         />
       </nav>
 

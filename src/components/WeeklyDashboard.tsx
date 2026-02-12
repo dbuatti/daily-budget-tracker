@@ -6,11 +6,13 @@ import DebugActions from './DebugActions';
 import BudgetArchitect from './BudgetArchitect';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Loader2, AlertTriangle, History } from 'lucide-react';
 import BudgetRemainingBar from './BudgetRemainingBar';
 import { WEEKLY_BUDGET_TOTAL } from '@/data/budgetData';
+import { useNavigate } from 'react-router-dom';
 
 const WeeklyDashboard: React.FC = () => {
+  const navigate = useNavigate();
   const { 
     modules, 
     gearTravelFund, 
@@ -63,11 +65,21 @@ const WeeklyDashboard: React.FC = () => {
         <h1 className="text-4xl font-extrabold text-indigo-900 dark:text-indigo-200">
           Weekly Permissions
         </h1>
-        <BudgetArchitect 
-          initialIncome={config.annualIncome} 
-          initialModules={modules} 
-          onSave={saveStrategy} 
-        />
+        <div className="flex items-center gap-3">
+          <Button 
+            variant="outline" 
+            onClick={() => navigate('/transactions')}
+            className="rounded-xl border-2 border-indigo-200 hover:bg-indigo-50 dark:border-indigo-800 dark:hover:bg-indigo-900/30"
+          >
+            <History className="w-4 h-4 mr-2" />
+            View History
+          </Button>
+          <BudgetArchitect 
+            initialIncome={config.annualIncome} 
+            initialModules={modules} 
+            onSave={saveStrategy} 
+          />
+        </div>
       </div>
 
       <DashboardHeader 

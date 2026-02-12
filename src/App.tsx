@@ -5,10 +5,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { SessionContextProvider } from "./contexts/SessionContext";
 import AuthGuard from "./components/AuthGuard";
-import MainLayout from "./components/MainLayout"; // Import MainLayout
+import MainLayout from "./components/MainLayout";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard"; // Import the renamed Dashboard page
+import Dashboard from "./pages/Dashboard";
+import Transactions from "./pages/Transactions"; // Import the new Transactions page
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -26,11 +27,11 @@ const App = () => (
             </Route>
             
             <Route element={<AuthGuard isProtected={true} />}>
-              <Route element={<MainLayout />}> {/* Use MainLayout for protected routes */}
+              <Route element={<MainLayout />}>
                 <Route path="/" element={<Index />} />
                 <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/transactions" element={<Transactions />} /> {/* New Route */}
               </Route>
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             </Route>
             
             <Route path="*" element={<NotFound />} />

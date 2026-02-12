@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, DollarSign } from 'lucide-react';
+import { LayoutDashboard, DollarSign, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface NavItemProps {
@@ -40,6 +40,12 @@ const MobileNav: React.FC = () => {
       label: 'Dashboard',
       icon: <LayoutDashboard className="w-6 h-6" />,
       isActive: location.pathname === '/dashboard',
+    },
+    {
+      to: '/transactions',
+      label: 'History',
+      icon: <History className="w-6 h-6" />,
+      isActive: location.pathname === '/transactions',
     },
   ];
 
