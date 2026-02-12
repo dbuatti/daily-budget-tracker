@@ -37,10 +37,10 @@ const generateTokens = (baseId: string, totalValue: number, preferredDenom: numb
  * Merges the saved state from the database with the initial hardcoded modules.
  */
 const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Module[] => {
-  console.log('[useBudgetState] Merging saved modules with initial modules...');
+  console.log('[useBudgetState] >>> START MERGE');
   
   if (!savedModules || savedModules.length === 0) {
-    console.log('[useBudgetState] No saved modules, using initial defaults.');
+    console.log('[useBudgetState] No saved modules found, using initial defaults.');
     return JSON.parse(JSON.stringify(initialModules));
   }
 
@@ -64,16 +64,23 @@ const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Mod
     }
   }
 
-  // Diagnostic log for Groceries specifically
+  // DEEP DIAGNOSTIC: Log every token in Groceries (A1)
   const groceries = mergedModules.flatMap(m => m.categories).find(c => c.id === 'A1');
   if (groceries) {
-    console.log('[useBudgetState] Groceries Category State:', {
+    const totalTokenValue = groceries.tokens.reduce((sum, t) => sum + t.value, 0);
+    console.log('[useBudgetState] Groceries (A1) Diagnostic:', {
       baseValue: groceries.baseValue,
+      sumOfTokens: totalTokenValue,
       tokenCount: groceries.tokens.length,
-      tokens: groceries.tokens.map(t => `${t.id}: $${t.value} (${t.spent ? 'spent' : 'unspent'})`)
+      tokens: groceries.tokens.map(t => ({ id: t.id, val: t.value, spent: t.spent }))
     });
+    
+    if (Math.abs(totalTokenValue - groceries.baseValue) > 0.01) {
+      console.warn(`[useBudgetState] MISMATCH in Groceries: Budget is ${groceries.baseValue} but tokens sum to ${totalTokenValue}`);
+    }
   }
 
+  console.log('[useBudgetState] <<< END MERGE');
   return mergedModules;
 };
 
@@ -91,13 +98,16 @@ const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState> => {
   }
   
   if (data) {
-    console.log('[useBudgetState] Raw data from Supabase:', data);
+    console.log('[useBudgetState] Data received from DB:', {
+      updated_at: data.updated_at,
+      fund: data.gear_travel_fund,
+      income: data.annual_income
+    });
     const state = data as WeeklyBudgetState;
     state.current_tokens = mergeBudgetState(state.current_tokens, initialModules);
     return state;
   }
   
-  console.log('[useBudgetState] No data found, returning default state.');
   return {
     user_id: userId,
     current_tokens: JSON.parse(JSON.stringify(initialModules)),
@@ -139,7 +149,13 @@ export const useBudgetState = () => {
   const saveMutation = useMutation({
     mutationFn: async (data: Partial<WeeklyBudgetState>) => {
       if (!userId) return;
-      console.log('[useBudgetState] Mutation payload:', data);
+      
+      // Log the payload before sending to Supabase
+      if (data.current_tokens) {
+        const groceries = data.current_tokens.flatMap(m => m.categories).find(c => c.id === 'A1');
+        console.log('[useBudgetState] PRE-SAVE Groceries Check:', groceries?.tokens.map(t => t.id));
+      }
+
       const payload: any = { user_id: userId, updated_at: new Date().toISOString() };
       if (data.current_tokens) payload.current_tokens = data.current_tokens;
       if (data.gear_travel_fund !== undefined) payload.gear_travel_fund = data.gear_travel_fund;
@@ -154,14 +170,10 @@ export const useBudgetState = () => {
         console.error('[useBudgetState] Upsert error:', error);
         throw error;
       }
-      console.log('[useBudgetState] Upsert success:', result);
       return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budgetState', userId] });
-    },
-    onError: (error: any) => {
-      toast.error(`Failed to save: ${error.message}`);
     }
   });
 
@@ -176,7 +188,7 @@ export const useBudgetState = () => {
   }), [state, annualIncome]);
 
   const totalSpentWeekly = useMemo(() => {
-    const total = modules.reduce((total, module) => 
+    return modules.reduce((total, module) => 
       total + module.categories.reduce((catTotal, category) => {
         if (category.id === FUEL_CATEGORY_ID) return catTotal;
         return catTotal + category.tokens
@@ -184,8 +196,6 @@ export const useBudgetState = () => {
           .reduce((tokenTotal, token) => tokenTotal + token.value, 0);
       }, 0)
     , 0);
-    console.log(`[useBudgetState] Total Weekly Spent: ${total}`);
-    return total;
   }, [modules]);
 
   const handleTokenSpend = useCallback(async (categoryId: string, tokenId: string) => {
@@ -258,7 +268,6 @@ export const useBudgetState = () => {
   }, [modules, userId, saveMutation, queryClient]);
 
   const handleGenericSpend = useCallback(async (amount: number) => {
-    console.log(`[useBudgetState] Logging generic spend $${amount}`);
     try {
       const { error: txError } = await supabase.from('budget_transactions').insert({
         user_id: userId!,
