@@ -21,27 +21,37 @@ const NavItem: React.FC<NavItemProps> = ({ to, icon, label }) => {
     <Link
       to={to}
       className={cn(
-        "flex items-center p-3 rounded-xl transition-all duration-200 group",
+        "flex items-center px-4 py-3 rounded-2xl transition-all duration-300 group relative",
         isActive
-          ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-lg"
-          : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none"
+          : "text-gray-500 hover:bg-indigo-50 dark:text-gray-400 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-300"
       )}
     >
-      <div className="mr-3">{icon}</div>
-      <span className="font-semibold">{label}</span>
+      <div className={cn(
+        "mr-3 transition-transform duration-300 group-hover:scale-110",
+        isActive ? "text-white" : "text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400"
+      )}>
+        {icon}
+      </div>
+      <span className="font-bold tracking-tight">{label}</span>
+      {isActive && (
+        <div className="absolute left-0 w-1 h-6 bg-white rounded-r-full" />
+      )}
     </Link>
   );
 };
 
 const DesktopSidebar: React.FC = () => {
   return (
-    <div className="hidden md:flex flex-col w-64 h-screen bg-sidebar border-r border-sidebar-border p-4 shadow-2xl sticky top-0">
+    <div className="hidden md:flex flex-col w-72 h-screen bg-white dark:bg-gray-950 border-r border-gray-100 dark:border-gray-900 p-6 sticky top-0 z-40">
       
       {/* Logo/Title Area */}
-      <div className="flex items-center justify-between mb-8 px-2">
-        <div className="flex items-center">
-          <Zap className="h-8 w-8 text-indigo-600 dark:text-indigo-400 mr-2" />
-          <h1 className="text-xl font-extrabold text-foreground">
+      <div className="flex items-center justify-between mb-10 px-2">
+        <div className="flex items-center gap-3">
+          <div className="bg-indigo-600 p-2 rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none">
+            <Zap className="h-6 w-6 text-white" />
+          </div>
+          <h1 className="text-2xl font-black tracking-tighter text-gray-900 dark:text-white">
             Permissions
           </h1>
         </div>
@@ -68,11 +78,13 @@ const DesktopSidebar: React.FC = () => {
       </nav>
 
       {/* Footer/User Area */}
-      <Separator className="my-4 bg-sidebar-border" />
-      <div className="px-2 space-y-2">
-        <LogoutButton />
+      <div className="mt-auto pt-6 space-y-4">
+        <Separator className="bg-gray-100 dark:bg-gray-800" />
+        <div className="px-2">
+          <LogoutButton />
+        </div>
+        <MadeWithDyad />
       </div>
-      <MadeWithDyad />
     </div>
   );
 };

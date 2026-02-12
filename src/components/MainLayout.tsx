@@ -8,14 +8,16 @@ const MainLayout: React.FC = () => {
   const isMobile = useIsMobile();
 
   return (
-    <div className="min-h-screen flex bg-gray-50 dark:bg-background">
+    <div className="min-h-screen flex bg-gray-50 dark:bg-background selection:bg-indigo-100 dark:selection:bg-indigo-900/30">
       {/* Desktop Sidebar */}
       <DesktopSidebar />
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="pb-20 md:pb-0"> {/* Add padding for mobile nav */}
-          <Outlet />
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="flex-1 overflow-y-auto scroll-smooth">
+          <div className="container max-w-6xl mx-auto px-4 py-6 sm:px-8 sm:py-10 pb-24 md:pb-10">
+            <Outlet />
+          </div>
         </div>
       </main>
       

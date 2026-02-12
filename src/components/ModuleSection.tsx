@@ -10,24 +10,24 @@ interface ModuleSectionProps {
 
 const ModuleSection: React.FC<ModuleSectionProps> = ({ module, onTokenSpend }) => {
   return (
-    <Card className="rounded-3xl p-4 sm:p-6 shadow-3xl border-4 border-indigo-300/50 dark:border-indigo-800/50 bg-white dark:bg-gray-950/70">
-      <CardHeader className="p-0 mb-4">
-        <CardTitle className="text-2xl sm:text-3xl font-extrabold text-indigo-700 dark:text-indigo-300 border-b-4 pb-3 border-indigo-200 dark:border-indigo-800">
-          Module {module.id}: {module.name}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0 space-y-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {module.categories.map((category) => (
-            <CategoryCard
-              key={category.id}
-              category={category}
-              onTokenSpend={onTokenSpend}
-            />
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 px-2">
+        <div className="h-1 w-8 bg-indigo-600 rounded-full" />
+        <h3 className="text-lg font-black tracking-tight text-gray-900 dark:text-white uppercase">
+          {module.name}
+        </h3>
+      </div>
+      
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        {module.categories.map((category) => (
+          <CategoryCard
+            key={category.id}
+            category={category}
+            onTokenSpend={onTokenSpend}
+          />
+        ))}
+      </div>
+    </div>
   );
 };
 

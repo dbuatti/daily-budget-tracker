@@ -6,7 +6,7 @@ import ModuleSection from '@/components/ModuleSection';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
 import MondayBriefingDialog from '@/components/MondayBriefingDialog';
 import RecentActivity from '@/components/RecentActivity';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Wallet, TrendingUp } from 'lucide-react';
 import { GENERIC_MODULE_ID } from '@/data/budgetData';
 import { formatCurrency } from '@/lib/format';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -51,20 +51,45 @@ const LogTransaction = () => {
   const weeklyRemaining = totalBudget - totalSpentWeekly;
 
   return (
-    <div className="p-4 sm:p-8 max-w-6xl mx-auto">
-      <h1 className="text-4xl font-extrabold text-center mb-8 text-indigo-900 dark:text-indigo-200">
-        Log Transaction
-      </h1>
+    <div className="space-y-10 animate-in fade-in duration-500">
+      <header className="space-y-2">
+        <h1 className="text-4xl font-black tracking-tight text-gray-900 dark:text-white">
+          Log Transaction
+        </h1>
+        <p className="text-gray-500 dark:text-gray-400 font-medium">
+          Track your spending and manage your weekly tokens.
+        </p>
+      </header>
       
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-        <div className="space-y-6">
-          <div className="p-6 bg-indigo-600 dark:bg-indigo-800 rounded-2xl shadow-2xl text-white text-center">
-            <p className="text-sm font-medium opacity-80 uppercase tracking-wider">
-              Today's Spend
-            </p>
-            <p className="text-5xl font-extrabold mt-2">
-              {formatCurrency(spentToday).replace('A$', '$')}
-            </p>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Left Column: Quick Actions & Stats */}
+        <div className="lg:col-span-5 space-y-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-6 bg-indigo-600 rounded-3xl shadow-xl shadow-indigo-200 dark:shadow-none text-white">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs font-bold uppercase tracking-widest opacity-80">Today's Spend</p>
+                <TrendingUp className="w-5 h-5 opacity-80" />
+              </div>
+              <p className="text-4xl font-black">
+                {formatCurrency(spentToday).replace('A$', '$')}
+              </p>
+            </div>
+
+            <div className="p-6 bg-white dark:bg-gray-900 rounded-3xl shadow-xl border border-gray-100 dark:border-gray-800">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Weekly Used</p>
+                <Wallet className="w-5 h-5 text-indigo-600" />
+              </div>
+              <p className="text-4xl font-black text-gray-900 dark:text-white">
+                {Math.round(weeklyProgress)}%
+              </p>
+              <div className="mt-4 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-indigo-600 transition-all duration-500" 
+                  style={{ width: `${weeklyProgress}%` }}
+                />
+              </div>
+            </div>
           </div>
           
           <QuickSpendButtons />
@@ -76,49 +101,25 @@ const LogTransaction = () => {
           />
         </div>
 
-        <div className="space-y-6">
-          <div className="p-6 bg-indigo-100 dark:bg-indigo-900/50 rounded-2xl shadow-xl border-2 border-indigo-300 dark:border-indigo-700 text-center">
-            <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">
-              Weekly Token Budget Used
-            </p>
-            <p className="text-5xl font-extrabold mt-2 text-indigo-900 dark:text-white">
-              {formatCurrency(totalSpentWeekly).replace('A$', '$')}
-            </p>
-            <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-2">
-              out of {formatCurrency(totalBudget).replace('A$', '$')} token budget
+        {/* Right Column: Category Modules */}
+        <div className="lg:col-span-7 space-y-8">
+          <div className="flex items-center justify-between px-2">
+            <h2 className="text-xl font-black text-gray-900 dark:text-white">Categories</h2>
+            <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+              {formatCurrency(weeklyRemaining).replace('A$', '$')} remaining
             </p>
           </div>
-
-          <div className="p-4 bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-800">
-            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Weekly Token Progress</h3>
-            <div className="relative pt-1">
-              <div className="flex mb-2 items-center justify-between">
-                <span className="text-xs font-semibold inline-block text-indigo-600 dark:text-indigo-400">
-                  {Math.round(weeklyProgress)}% Used
-                </span>
-                <span className="text-xs font-semibold inline-block text-gray-600 dark:text-gray-400">
-                  {formatCurrency(weeklyRemaining).replace('A$', '$')} remaining
-                </span>
-              </div>
-              <div className="overflow-hidden h-3 mb-4 text-xs flex rounded bg-gray-200 dark:bg-gray-800">
-                <div 
-                  style={{ width: `${weeklyProgress}%` }}
-                  className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-indigo-600 dark:bg-indigo-500 transition-all duration-500"
-                ></div>
-              </div>
-            </div>
+          
+          <div className="space-y-8">
+            {visibleModules.map((module) => (
+              <ModuleSection
+                key={module.id}
+                module={module}
+                onTokenSpend={handleTokenSpend}
+              />
+            ))}
           </div>
         </div>
-      </div>
-
-      <div className="space-y-8">
-        {visibleModules.map((module) => (
-          <ModuleSection
-            key={module.id}
-            module={module}
-            onTokenSpend={handleTokenSpend}
-          />
-        ))}
       </div>
 
       {resetBriefing && (
