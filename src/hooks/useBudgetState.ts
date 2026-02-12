@@ -129,7 +129,6 @@ export const useBudgetState = () => {
     mutationFn: async (data: Partial<WeeklyBudgetState>) => {
       if (!userId) return;
       
-      // Clean data to avoid sending columns that might cause PGRST204 errors
       const payload: any = {
         user_id: userId,
         updated_at: new Date().toISOString()
@@ -139,10 +138,6 @@ export const useBudgetState = () => {
       if (data.gear_travel_fund !== undefined) payload.gear_travel_fund = data.gear_travel_fund;
       if (data.annual_income !== undefined) payload.annual_income = data.annual_income;
       
-      // Only include config if it's explicitly provided and we want to risk it
-      // For now, we'll skip it if it's causing schema cache issues
-      // if (data.config) payload.config = data.config;
-
       const { data: result, error } = await supabase
         .from('weekly_budget_state')
         .upsert(payload, { onConflict: 'user_id' })
@@ -178,6 +173,11 @@ export const useBudgetState = () => {
   , 0), [modules]);
 
   const handleTokenSpend = useCallback(async (categoryId: string, tokenId: string) => {
+    const category = modules.flatMap(m => m.categories).find(c => c.id === categoryId);
+    const token = category?.tokens.find(t => t.id === tokenId);
+    const amount = token?.value || 0;
+    const categoryName = category?.name || 'Unknown Category';
+
     const updatedModules = modules.map(module => ({
       ...module,
       categories: module.categories.map(category => {
@@ -191,21 +191,23 @@ export const useBudgetState = () => {
       })
     }));
 
-    const amount = modules.flatMap(m => m.categories).find(c => c.id === categoryId)?.tokens.find(t => t.id === tokenId)?.value || 0;
-
     await supabase.from('budget_transactions').insert({
       user_id: userId!,
       amount,
       category_id: categoryId,
+      category_name: categoryName, // Save the actual name
       transaction_type: 'token_spend'
     });
 
     await saveMutation.mutateAsync({ current_tokens: updatedModules });
-    toast.success(`Logged ${formatCurrency(amount)}`);
+    toast.success(`Logged ${formatCurrency(amount)} for ${categoryName}`);
     queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
   }, [modules, userId, saveMutation, queryClient]);
 
   const handleCustomSpend = useCallback(async (categoryId: string, amount: number) => {
+    const category = modules.flatMap(m => m.categories).find(c => c.id === categoryId);
+    const categoryName = category?.name || 'Unknown Category';
+
     const updatedModules = modules.map(module => ({
       ...module,
       categories: module.categories.map(category => {
@@ -221,11 +223,12 @@ export const useBudgetState = () => {
       user_id: userId!,
       amount,
       category_id: categoryId,
+      category_name: categoryName, // Save the actual name
       transaction_type: 'custom_spend'
     });
 
     await saveMutation.mutateAsync({ current_tokens: updatedModules });
-    toast.success(`Logged custom spend: ${formatCurrency(amount)}`);
+    toast.success(`Logged custom spend: ${formatCurrency(amount)} in ${categoryName}`);
     queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
   }, [modules, userId, saveMutation, queryClient]);
 
@@ -233,6 +236,7 @@ export const useBudgetState = () => {
     await supabase.from('budget_transactions').insert({
       user_id: userId!,
       amount,
+      category_name: 'Generic Spend',
       transaction_type: 'generic_spend'
     });
     toast.success(`Logged generic spend: ${formatCurrency(amount)}`);
@@ -253,7 +257,6 @@ export const useBudgetState = () => {
           newBaseValue = Math.round((weeklyIncome * (category.percentage || 0) / 100) * 100) / 100;
         }
         
-        // Round to nearest 5 for tokenization
         newBaseValue = Math.round(newBaseValue / 5) * 5;
         
         const spentAmount = category.tokens.filter(t => t.spent).reduce((sum, t) => sum + t.value, 0);

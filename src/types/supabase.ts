@@ -11,11 +11,14 @@ export interface WeeklyBudgetState {
 }
 
 export interface BudgetTransaction {
+  id?: string;
   user_id: string;
   amount: number;
   category_id?: string;
+  category_name?: string; // Added to store the display name
   description?: string;
   transaction_type: 'token_spend' | 'custom_spend' | 'generic_spend';
+  created_at: string;
 }
 
 export interface UserProfile {

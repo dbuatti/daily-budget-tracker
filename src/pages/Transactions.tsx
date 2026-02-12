@@ -11,7 +11,6 @@ import {
   History, 
   Loader2, 
   ShoppingBag, 
-  Coffee, 
   Car, 
   Home, 
   Heart, 
@@ -39,14 +38,20 @@ const getCategoryIcon = (categoryId: string | null) => {
   return <DollarSign className="w-5 h-5" />;
 };
 
-const getCategoryName = (categoryId: string | null) => {
-  if (!categoryId) return 'Generic Spend';
+const getCategoryName = (tx: any) => {
+  // 1. Prioritize the saved category_name from the transaction record
+  if (tx.category_name) return tx.category_name;
   
+  // 2. Fallback to generic spend if no ID
+  if (!tx.category_id) return 'Generic Spend';
+  
+  // 3. Fallback to searching initialModules (for older transactions)
   for (const module of initialModules) {
-    const category = module.categories.find(c => c.id === categoryId);
+    const category = module.categories.find(c => c.id === tx.category_id);
     if (category) return category.name;
   }
   
+  // 4. Final fallback
   return 'Custom Category';
 };
 
@@ -125,7 +130,7 @@ const Transactions = () => {
                   </div>
                   <div className="flex-grow min-w-0">
                     <h3 className="font-bold text-gray-900 dark:text-gray-100 truncate">
-                      {getCategoryName(tx.category_id)}
+                      {getCategoryName(tx)}
                     </h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       {format(new Date(tx.created_at), 'MMM d, yyyy • h:mm a')}
