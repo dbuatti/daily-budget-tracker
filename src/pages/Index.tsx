@@ -1,8 +1,11 @@
+"use client";
+
 import React, { useEffect } from 'react';
 import { useBudgetState } from '@/hooks/useBudgetState';
 import ModuleSection from '@/components/ModuleSection';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
 import MondayBriefingDialog from '@/components/MondayBriefingDialog';
+import RecentActivity from '@/components/RecentActivity';
 import { Loader2 } from 'lucide-react';
 import { GENERIC_MODULE_ID } from '@/data/budgetData';
 import { formatCurrency } from '@/lib/format';
@@ -11,13 +14,15 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 const LogTransaction = () => {
   const { 
     modules, 
+    transactions,
     isLoading, 
     handleTokenSpend, 
     resetBriefing, 
     clearBriefing, 
     spentToday, 
     totalSpent: totalSpentWeekly, 
-    refetchSpentToday 
+    refetchSpentToday,
+    deleteTransaction
   } = useBudgetState();
   
   const { profile } = useUserProfile();
@@ -63,6 +68,12 @@ const LogTransaction = () => {
           </div>
           
           <QuickSpendButtons />
+
+          <RecentActivity 
+            transactions={transactions} 
+            modules={modules} 
+            onDelete={deleteTransaction} 
+          />
         </div>
 
         <div className="space-y-6">

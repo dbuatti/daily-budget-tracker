@@ -1,26 +1,26 @@
-import React from 'react';
+"use client";
+
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useBudgetState } from '@/hooks/useBudgetState';
 import { formatCurrency } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { PlusCircle } from 'lucide-react';
+import AddTokenDialog from './AddTokenDialog';
+import { GENERIC_CATEGORY_ID } from '@/data/budgetData';
 
 const quickAmounts = [5, 10, 15, 20, 25, 30];
 
 const QuickSpendButtons: React.FC = () => {
   const { handleGenericSpend, totalSpent } = useBudgetState();
   
-  // TOTAL_TOKEN_BUDGET is 382.00 based on budgetData.ts
   const TOTAL_TOKEN_BUDGET = 382.00; 
   const remainingActiveBudget = TOTAL_TOKEN_BUDGET - totalSpent;
-
-  const handleSpend = (amount: number) => {
-    handleGenericSpend(amount);
-  };
 
   return (
     <div className="mb-8 p-4 bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-800">
       <h2 className="text-xl font-extrabold text-indigo-800 dark:text-indigo-300 mb-4 text-center">
-        Quick Log (Generic Spend)
+        Quick Log
       </h2>
       <div className="flex flex-wrap justify-center gap-3">
         {quickAmounts.map((amount) => {
@@ -29,7 +29,7 @@ const QuickSpendButtons: React.FC = () => {
           return (
             <Button
               key={amount}
-              onClick={() => handleSpend(amount)}
+              onClick={() => handleGenericSpend(amount)}
               className={cn(
                 "h-14 w-20 rounded-xl font-extrabold text-lg transition-all duration-200 shadow-lg active:scale-[0.95]",
                 isOverBudget
@@ -44,6 +44,14 @@ const QuickSpendButtons: React.FC = () => {
             </Button>
           );
         })}
+        
+        <div className="w-full mt-2 flex justify-center">
+          <AddTokenDialog 
+            categoryId={GENERIC_CATEGORY_ID}
+            categoryName="Generic Spend"
+            onAddToken={handleGenericSpend}
+          />
+        </div>
       </div>
     </div>
   );

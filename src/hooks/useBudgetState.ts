@@ -16,7 +16,6 @@ import {
   DEFAULT_ANNUAL_INCOME 
 } from '@/data/budgetData';
 
-// Helper to generate tokens based on a value
 const generateTokens = (baseId: string, totalValue: number, preferredDenom: number = 10): Token[] => {
   const tokens: Token[] = [];
   let remaining = totalValue;
@@ -80,7 +79,7 @@ export const useBudgetState = () => {
         .select('*')
         .eq('user_id', userId)
         .gte('created_at', budgetState.last_reset_date)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: false });
       
       if (error) throw error;
       return data as BudgetTransaction[];
@@ -164,18 +163,29 @@ export const useBudgetState = () => {
     }
   });
 
+  const deleteTransaction = useCallback(async (id: string) => {
+    const { error } = await supabase.from('budget_transactions').delete().eq('id', id);
+    if (error) {
+      toast.error("Failed to undo: " + error.message);
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ['budgetTransactions', userId] });
+    queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
+    toast.success("Transaction undone");
+  }, [userId, queryClient]);
+
   const handleTokenSpend = useCallback(async (catId: string, tokenId: string) => {
     const category = modules.flatMap(m => m.categories).find(c => c.id === catId);
     const token = category?.tokens.find(t => t.id === tokenId);
     
     if (!token || token.spent) return;
 
-    const { error } = await supabase.from('budget_transactions').insert({
+    const { data, error } = await supabase.from('budget_transactions').insert({
       user_id: userId!,
       amount: token.value,
       category_id: catId,
       transaction_type: 'token_spend'
-    });
+    }).select().single();
 
     if (error) {
       toast.error("Failed to log spend: " + error.message);
@@ -187,16 +197,21 @@ export const useBudgetState = () => {
       queryClient.invalidateQueries({ queryKey: ['spentToday', userId] })
     ]);
     
-    toast.success(`Spent ${formatCurrency(token.value)} in ${category?.name}`);
-  }, [modules, userId, queryClient]);
+    toast.success(`Spent ${formatCurrency(token.value)} in ${category?.name}`, {
+      action: {
+        label: "Undo",
+        onClick: () => deleteTransaction(data.id)
+      }
+    });
+  }, [modules, userId, queryClient, deleteTransaction]);
 
   const handleCustomSpend = useCallback(async (categoryId: string, amount: number) => {
-    const { error } = await supabase.from('budget_transactions').insert({
+    const { data, error } = await supabase.from('budget_transactions').insert({
       user_id: userId!,
       amount,
       category_id: categoryId,
       transaction_type: 'custom_spend'
-    });
+    }).select().single();
 
     if (error) {
       toast.error("Failed to log custom spend: " + error.message);
@@ -208,8 +223,13 @@ export const useBudgetState = () => {
       queryClient.invalidateQueries({ queryKey: ['spentToday', userId] })
     ]);
     
-    toast.success(`Logged ${formatCurrency(amount)} custom spend`);
-  }, [userId, queryClient]);
+    toast.success(`Logged ${formatCurrency(amount)} custom spend`, {
+      action: {
+        label: "Undo",
+        onClick: () => deleteTransaction(data.id)
+      }
+    });
+  }, [userId, queryClient, deleteTransaction]);
 
   const handleGenericSpend = useCallback(async (amount: number) => {
     return handleCustomSpend(GENERIC_CATEGORY_ID, amount);
@@ -242,6 +262,7 @@ export const useBudgetState = () => {
 
   return {
     modules,
+    transactions,
     totalSpent: totalSpentWeekly,
     spentToday,
     refetchSpentToday,
@@ -262,6 +283,7 @@ export const useBudgetState = () => {
     handleFullReset,
     handleFundAdjustment,
     resetToInitialBudgets,
+    deleteTransaction,
     saveStrategy: async (income: number, updatedModules: Module[]) => {
       return await saveMutation.mutateAsync({ 
         annual_income: income, 
