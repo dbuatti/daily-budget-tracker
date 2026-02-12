@@ -4,9 +4,10 @@ import React from 'react';
 import { formatCurrency } from '@/lib/format';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import StyledProgress from '@/components/StyledProgress';
-import { DollarSign, TrendingUp, Wallet, Calendar, Coffee } from 'lucide-react';
+import { DollarSign, TrendingUp, Wallet, Calendar, Coffee, Activity } from 'lucide-react';
 import { Module } from '@/types/budget';
-import { differenceInDays, nextMonday, startOfDay } from 'date-fns';
+import { differenceInDays, nextMonday, startOfDay, getDay } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 interface DashboardHeaderProps {
   totalSpent: number;
@@ -28,8 +29,17 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ totalSpent, gearTrave
   const savingsGoal = 500; 
   const savingsProgress = Math.min(100, (gearTravelFund / savingsGoal) * 100);
 
-  const daysUntilReset = Math.max(1, differenceInDays(nextMonday(new Date()), startOfDay(new Date())));
+  const now = new Date();
+  const daysUntilReset = Math.max(1, differenceInDays(nextMonday(now), startOfDay(now)));
   const dailyAllowance = Math.max(0, remainingBudget / daysUntilReset);
+
+  // Calculate Pace
+  // Monday is 1, Sunday is 0 in JS getDay(), but we want Monday=1...Sunday=7
+  const dayOfWeek = getDay(now) === 0 ? 7 : getDay(now);
+  const expectedSpendRatio = dayOfWeek / 7;
+  const actualSpendRatio = totalBudget > 0 ? totalSpent / totalBudget : 0;
+  const isOverPace = actualSpendRatio > expectedSpendRatio + 0.05; // 5% buffer
+  const isUnderPace = actualSpendRatio < expectedSpendRatio - 0.05;
 
   const getStatusText = () => {
     if (deficit > 0) {
@@ -62,16 +72,22 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ totalSpent, gearTrave
       <Card className="rounded-2xl shadow-2xl border-4 border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 transition-transform hover:scale-[1.01]">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-semibold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-            Daily Allowance
+            Spending Pace
           </CardTitle>
-          <Coffee className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+          <Activity className={cn(
+            "h-6 w-6",
+            isOverPace ? "text-orange-500" : isUnderPace ? "text-emerald-500" : "text-blue-500"
+          )} />
         </CardHeader>
         <CardContent>
-          <div className="text-4xl font-extrabold text-emerald-900 dark:text-white">
-            {formatCurrency(dailyAllowance).replace('A$', '$')}
+          <div className={cn(
+            "text-3xl font-extrabold",
+            isOverPace ? "text-orange-600 dark:text-orange-400" : isUnderPace ? "text-emerald-600 dark:text-emerald-400" : "text-blue-600 dark:text-blue-400"
+          )}>
+            {isOverPace ? "Ahead of Pace" : isUnderPace ? "Under Pace" : "On Track"}
           </div>
-          <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-bold">
-            Safe to spend per day
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-bold">
+            Daily Allowance: {formatCurrency(dailyAllowance).replace('A$', '$')}
           </p>
         </CardContent>
       </Card>

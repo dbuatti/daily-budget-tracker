@@ -4,6 +4,7 @@ import DashboardHeader from './DashboardHeader';
 import ModuleSection from './ModuleSection';
 import DebugActions from './DebugActions';
 import BudgetArchitect from './BudgetArchitect';
+import SpendingBreakdown from './SpendingBreakdown';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2, AlertTriangle, History } from 'lucide-react';
@@ -25,6 +26,7 @@ const WeeklyDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { 
     modules, 
+    transactions,
     gearTravelFund, 
     totalSpent, 
     config,
@@ -102,40 +104,48 @@ const WeeklyDashboard: React.FC = () => {
         modules={modules}
       />
 
-      <div className="mt-4 rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
-        <BudgetRemainingBar spent={totalSpent} total={totalBudget} className="border border-gray-200 dark:border-gray-700" />
-      </div>
-
-      <div className="flex justify-end items-center space-x-4 mb-6 mt-6">
-        <DebugActions />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+        <div className="lg:col-span-2 space-y-6">
+          <div className="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
+            <BudgetRemainingBar spent={totalSpent} total={totalBudget} className="border border-gray-200 dark:border-gray-700" />
+          </div>
+          
+          <div className="flex justify-end items-center space-x-4">
+            <DebugActions />
+            
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button 
+                  className="bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg transition-transform active:scale-[0.98] font-semibold"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Simulate Monday Reset
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="rounded-2xl">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Simulate Monday Reset?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will reset your weekly spending progress and start a fresh week. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+                  <AlertDialogAction 
+                    onClick={handleMondayReset}
+                    className="bg-green-600 hover:bg-green-700 text-white rounded-xl"
+                  >
+                    Reset Week
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        </div>
         
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button 
-              className="bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg transition-transform active:scale-[0.98] font-semibold"
-            >
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Simulate Monday Reset
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent className="rounded-2xl">
-            <AlertDialogHeader>
-              <AlertDialogTitle>Simulate Monday Reset?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will reset your weekly spending progress and start a fresh week. This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
-              <AlertDialogAction 
-                onClick={handleMondayReset}
-                className="bg-green-600 hover:bg-green-700 text-white rounded-xl"
-              >
-                Reset Week
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <div className="lg:col-span-1">
+          <SpendingBreakdown modules={modules} transactions={transactions} />
+        </div>
       </div>
 
       <div className="space-y-8">
