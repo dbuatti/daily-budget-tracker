@@ -117,15 +117,34 @@ export const useBudgetState = () => {
   const spentToday = spentTodayData || 0;
 
   const saveMutation = useMutation({
-    mutationFn: (data: Partial<WeeklyBudgetState>) => 
-      supabase.from('weekly_budget_state').upsert({
-        user_id: userId!,
-        ...data,
-        updated_at: new Date().toISOString()
-      }),
+    mutationFn: async (data: Partial<WeeklyBudgetState>) => {
+      console.log('[useBudgetState] Attempting to save budget state:', data);
+      const { data: result, error } = await supabase
+        .from('weekly_budget_state')
+        .upsert(
+          {
+            user_id: userId!,
+            ...data,
+            updated_at: new Date().toISOString()
+          },
+          { onConflict: 'user_id' }
+        )
+        .select();
+
+      if (error) {
+        console.error('[useBudgetState] Save error:', error);
+        throw error;
+      }
+      console.log('[useBudgetState] Save successful:', result);
+      return result;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budgetState', userId] });
+      toast.success('Budget strategy saved successfully!');
     },
+    onError: (error: any) => {
+      toast.error(`Failed to save strategy: ${error.message}`);
+    }
   });
 
   const modules: Module[] = state?.current_tokens || [];
@@ -238,11 +257,10 @@ export const useBudgetState = () => {
       })
     }));
 
-    await saveMutation.mutateAsync({ 
+    return saveMutation.mutateAsync({ 
       current_tokens: finalModules, 
       config: { ...config, annualIncome: newIncome } 
     });
-    toast.success('Budget strategy saved!');
   }, [config, saveMutation]);
 
   const handleMondayReset = useCallback(async () => {
@@ -271,6 +289,7 @@ export const useBudgetState = () => {
     config,
     isLoading,
     isError,
+    isSaving: saveMutation.isPending,
     handleTokenSpend,
     handleCustomSpend,
     handleGenericSpend,

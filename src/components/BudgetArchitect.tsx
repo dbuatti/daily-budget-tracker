@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sheet,
   SheetContent,
@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Settings2, Plus, Trash2, Info, Wallet, Calendar, Clock } from 'lucide-react';
+import { Settings2, Plus, Trash2, Wallet, Calendar, Loader2 } from 'lucide-react';
 import { Module, Category } from '@/types/budget';
 import { formatCurrency } from '@/lib/format';
 import { WEEKS_IN_YEAR } from '@/data/budgetData';
@@ -29,13 +29,22 @@ import { cn } from '@/lib/utils';
 interface BudgetArchitectProps {
   initialIncome: number;
   initialModules: Module[];
-  onSave: (income: number, modules: Module[]) => void;
+  onSave: (income: number, modules: Module[]) => Promise<any>;
 }
 
 const BudgetArchitect: React.FC<BudgetArchitectProps> = ({ initialIncome, initialModules, onSave }) => {
   const [income, setIncome] = useState(initialIncome);
-  const [modules, setModules] = useState<Module[]>(JSON.parse(JSON.stringify(initialModules)));
+  const [modules, setModules] = useState<Module[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Initialize local state when sheet opens
+  useEffect(() => {
+    if (isOpen) {
+      setIncome(initialIncome);
+      setModules(JSON.parse(JSON.stringify(initialModules)));
+    }
+  }, [isOpen, initialIncome, initialModules]);
 
   const weeklyIncome = income / WEEKS_IN_YEAR;
 
@@ -91,6 +100,18 @@ const BudgetArchitect: React.FC<BudgetArchitectProps> = ({ initialIncome, initia
       return m;
     });
     setModules(newModules);
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await onSave(income, modules);
+      setIsOpen(false);
+    } catch (error) {
+      console.error('[BudgetArchitect] Save failed:', error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -245,14 +266,18 @@ const BudgetArchitect: React.FC<BudgetArchitectProps> = ({ initialIncome, initia
             </div>
             
             <Button 
-              onClick={() => {
-                onSave(income, modules);
-                setIsOpen(false);
-              }}
-              disabled={isOverAllocated}
+              onClick={handleSave}
+              disabled={isOverAllocated || isSaving}
               className="w-full h-14 text-lg font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xl"
             >
-              Save Strategy
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  Saving Strategy...
+                </>
+              ) : (
+                'Save Strategy'
+              )}
             </Button>
           </div>
         </SheetFooter>
