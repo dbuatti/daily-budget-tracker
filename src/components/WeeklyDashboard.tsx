@@ -5,6 +5,7 @@ import ModuleSection from './ModuleSection';
 import DebugActions from './DebugActions';
 import BudgetArchitect from './BudgetArchitect';
 import SpendingBreakdown from './SpendingBreakdown';
+import DailySpendingChart from './DailySpendingChart';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2, AlertTriangle, History } from 'lucide-react';
@@ -36,6 +37,11 @@ const WeeklyDashboard: React.FC = () => {
     handleMondayReset,
     saveStrategy
   } = useBudgetState();
+
+  // Get the last reset date from the first transaction or default to start of week
+  const lastResetDate = transactions.length > 0 
+    ? transactions[transactions.length - 1].created_at 
+    : new Date().toISOString();
 
   const totalBudget = modules.reduce((acc, module) => {
     return acc + module.categories.reduce((catAcc, cat) => catAcc + (cat.baseValue || 0), 0);
@@ -106,6 +112,8 @@ const WeeklyDashboard: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
         <div className="lg:col-span-2 space-y-6">
+          <DailySpendingChart transactions={transactions} lastResetDate={lastResetDate} />
+          
           <div className="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
             <BudgetRemainingBar spent={totalSpent} total={totalBudget} className="border border-gray-200 dark:border-gray-700" />
           </div>
