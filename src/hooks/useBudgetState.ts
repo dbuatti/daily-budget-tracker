@@ -40,10 +40,11 @@ export const useBudgetState = () => {
   const [resetBriefing, setResetBriefing] = useState<any>(null);
   const clearBriefing = useCallback(() => setResetBriefing(null), []);
 
-  // Helper to get the start of the current budget week (Monday)
+  // Helper to get the start of the current budget week (Monday 12:00 AM)
   const getStartOfBudgetWeek = useCallback(() => {
     // weekStartsOn: 1 is Monday
-    return format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+    const monday = startOfWeek(new Date(), { weekStartsOn: 1 });
+    return format(monday, 'yyyy-MM-dd');
   }, []);
 
   // 1. Fetch the Budget Configuration
@@ -89,8 +90,6 @@ export const useBudgetState = () => {
       
       console.log(`[useBudgetState] Fetching transactions since: ${budgetState.last_reset_date}`);
       
-      // We fetch with a slightly wider range to ensure we don't miss anything due to TZ offsets,
-      // but we filter strictly in the useMemo below.
       const { data, error } = await supabase
         .from('budget_transactions')
         .select('*')
@@ -281,6 +280,17 @@ export const useBudgetState = () => {
     toast.success("Reset to initial budgets.");
   }, [saveMutation]);
 
+  const handleMondayReset = useCallback(async () => {
+    const mondayDate = getStartOfBudgetWeek();
+    console.log(`[useBudgetState] Manually resetting budget week to Monday: ${mondayDate}`);
+    
+    await saveMutation.mutateAsync({ 
+      last_reset_date: mondayDate 
+    });
+    
+    toast.success(`Budget week reset to Monday, ${mondayDate}`);
+  }, [saveMutation, getStartOfBudgetWeek]);
+
   return {
     modules,
     totalSpent: totalSpentWeekly,
@@ -299,7 +309,7 @@ export const useBudgetState = () => {
     handleCustomSpend,
     handleTokenSpend,
     handleGenericSpend,
-    handleMondayReset: () => toast.info("Monday reset logic pending implementation."),
+    handleMondayReset,
     handleFullReset,
     handleFundAdjustment,
     resetToInitialBudgets,

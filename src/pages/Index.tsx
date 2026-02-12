@@ -3,14 +3,14 @@ import { useBudgetState } from '@/hooks/useBudgetState';
 import ModuleSection from '@/components/ModuleSection';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
 import MondayBriefingDialog from '@/components/MondayBriefingDialog';
-import { Loader2, Bug, RefreshCw, Terminal, AlertCircle, Calendar } from 'lucide-react';
+import { Loader2, Bug, RefreshCw, Terminal, AlertCircle, Calendar, ShieldAlert } from 'lucide-react';
 import { GENERIC_MODULE_ID } from '@/data/budgetData';
 import { formatCurrency } from '@/lib/format';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { parseISO, startOfDay, isAfter } from 'date-fns';
+import { parseISO, startOfDay, isAfter, startOfWeek, format } from 'date-fns';
 
 const LogTransaction = () => {
   const { 
@@ -21,7 +21,8 @@ const LogTransaction = () => {
     clearBriefing, 
     spentToday, 
     totalSpent: totalSpentWeekly, 
-    refetchSpentToday 
+    refetchSpentToday,
+    handleMondayReset
   } = useBudgetState();
   
   const { profile } = useUserProfile();
@@ -174,6 +175,7 @@ const LogTransaction = () => {
   const weeklyProgress = totalBudget > 0 ? Math.min(100, (totalSpentWeekly / totalBudget) * 100) : 0;
   const weeklyRemaining = totalBudget - totalSpentWeekly;
 
+  const expectedMonday = format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
@@ -287,8 +289,28 @@ const LogTransaction = () => {
             <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2 flex items-center">
               <Calendar className="w-4 h-4 mr-2" /> Budget Reset Date
             </h4>
-            <div className="text-xs space-y-1 text-orange-900 dark:text-orange-200">
-              <p><strong>Current Reset Date:</strong> {currentResetDate || 'Loading...'}</p>
+            <div className="text-xs space-y-2 text-orange-900 dark:text-orange-200">
+              <div className="flex justify-between items-center">
+                <p><strong>Current Reset Date:</strong> {currentResetDate || 'Loading...'}</p>
+                <p className="text-[10px] font-bold text-orange-600">Expected: {expectedMonday}</p>
+              </div>
+              
+              {currentResetDate !== expectedMonday && (
+                <div className="p-2 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-md">
+                  <p className="text-red-700 dark:text-red-400 font-bold flex items-center">
+                    <ShieldAlert className="w-3 h-3 mr-1" /> Reset Date Mismatch!
+                  </p>
+                  <p className="text-[10px] mt-1">Your budget week is starting on a Wednesday instead of Monday. This is why Monday's transactions are hidden.</p>
+                  <Button 
+                    onClick={handleMondayReset}
+                    size="sm"
+                    className="mt-2 w-full bg-red-600 hover:bg-red-700 text-white h-7 text-[10px]"
+                  >
+                    Force Reset to Monday ({expectedMonday})
+                  </Button>
+                </div>
+              )}
+              
               <p className="text-[10px] opacity-70 italic">Transactions before this date are ignored for the current weekly view.</p>
             </div>
           </div>
