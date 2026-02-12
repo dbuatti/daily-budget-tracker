@@ -16,7 +16,9 @@ import {
   WEEKS_IN_YEAR 
 } from '@/data/budgetData';
 
-// Helper to generate tokens based on value and denomination
+/**
+ * Helper to generate tokens based on value and denomination.
+ */
 const generateTokens = (baseId: string, totalValue: number, preferredDenom: number = 10) => {
   const tokens = [];
   let remaining = totalValue;
@@ -25,47 +27,47 @@ const generateTokens = (baseId: string, totalValue: number, preferredDenom: numb
     tokens.push({ id: `${baseId}-${count++}`, value: preferredDenom, spent: false });
     remaining -= preferredDenom;
   }
-  if (remaining >= 1) {
+  if (remaining >= 0.01) {
     tokens.push({ id: `${baseId}-${count++}`, value: Math.round(remaining * 100) / 100, spent: false });
   }
   return tokens;
 };
 
+/**
+ * Merges the saved state from the database with the initial hardcoded modules.
+ * This ensures that if we add new categories in code, they appear for the user,
+ * but their existing customizations and spent statuses are preserved.
+ */
 const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Module[] => {
-  const mergedModules: Module[] = JSON.parse(JSON.stringify(initialModules));
-  const savedModuleMap = new Map(savedModules.map(m => [m.id, m]));
-  const mergedModuleMap = new Map(mergedModules.map(m => [m.id, m]));
-
-  for (const initialModule of mergedModules) {
-    const savedModule = savedModuleMap.get(initialModule.id);
-    if (savedModule) {
-      const initialCategoryMap = new Map(initialModule.categories.map(c => [c.id, c]));
-      const finalCategories: Category[] = [];
-      
-      for (const savedCategory of savedModule.categories) {
-        const initialCategory = initialCategoryMap.get(savedCategory.id);
-        if (initialCategory) {
-          const mergedCategory = {
-            ...initialCategory,
-            ...savedCategory,
-            tokens: savedCategory.tokens.map(savedToken => {
-              const initialToken = initialCategory.tokens.find(t => t.id === savedToken.id);
-              return initialToken ? { ...initialToken, spent: savedToken.spent } : savedToken;
-            })
-          };
-          finalCategories.push(mergedCategory);
-        } else {
-          finalCategories.push(savedCategory);
-        }
-      }
-      
-      initialModule.categories = finalCategories;
-    }
+  console.log('[useBudgetState] Merging saved modules with initial modules...');
+  
+  // If no saved modules, just use initial
+  if (!savedModules || savedModules.length === 0) {
+    console.log('[useBudgetState] No saved modules found, using initial defaults.');
+    return JSON.parse(JSON.stringify(initialModules));
   }
 
-  for (const savedModule of savedModules) {
-    if (!mergedModuleMap.has(savedModule.id)) {
-      mergedModules.push(savedModule);
+  // We want to keep the user's saved modules as the primary source of truth,
+  // but append any NEW modules or categories from initialModules that don't exist in saved.
+  const mergedModules: Module[] = JSON.parse(JSON.stringify(savedModules));
+  const savedModuleIds = new Set(mergedModules.map(m => m.id));
+
+  // Add missing modules from initial
+  for (const initialModule of initialModules) {
+    if (!savedModuleIds.has(initialModule.id)) {
+      console.log(`[useBudgetState] Adding missing module from defaults: ${initialModule.name} (${initialModule.id})`);
+      mergedModules.push(JSON.parse(JSON.stringify(initialModule)));
+    } else {
+      // Module exists, check for missing categories within it
+      const mergedModule = mergedModules.find(m => m.id === initialModule.id)!;
+      const savedCategoryIds = new Set(mergedModule.categories.map(c => c.id));
+      
+      for (const initialCategory of initialModule.categories) {
+        if (!savedCategoryIds.has(initialCategory.id)) {
+          console.log(`[useBudgetState] Adding missing category to module ${mergedModule.name}: ${initialCategory.name}`);
+          mergedModule.categories.push(JSON.parse(JSON.stringify(initialCategory)));
+        }
+      }
     }
   }
 
@@ -73,23 +75,29 @@ const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Mod
 };
 
 const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState> => {
+  console.log(`[useBudgetState] Fetching budget state for user: ${userId}`);
   const { data, error } = await supabase
     .from('weekly_budget_state')
     .select('*')
     .eq('user_id', userId)
     .single();
 
-  if (error && error.code !== 'PGRST116') throw new Error(error.message);
+  if (error && error.code !== 'PGRST116') {
+    console.error('[useBudgetState] Error fetching budget state:', error);
+    throw new Error(error.message);
+  }
   
   if (data) {
+    console.log('[useBudgetState] Budget state found in database.');
     const state = data as WeeklyBudgetState;
     state.current_tokens = mergeBudgetState(state.current_tokens, initialModules);
     return state;
   }
   
+  console.log('[useBudgetState] No budget state found, initializing with defaults.');
   return {
     user_id: userId,
-    current_tokens: initialModules,
+    current_tokens: JSON.parse(JSON.stringify(initialModules)),
     gear_travel_fund: 0,
     annual_income: DEFAULT_ANNUAL_INCOME,
     last_reset_date: new Date().toISOString().split('T')[0],
@@ -100,7 +108,10 @@ const fetchBudgetState = async (userId: string): Promise<WeeklyBudgetState> => {
 
 const fetchSpentToday = async (userId: string): Promise<number> => {
   const { data, error } = await supabase.rpc('get_daily_spent_amount', { p_user_id: userId });
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error('[useBudgetState] Error fetching daily spent amount:', error);
+    throw new Error(error.message);
+  }
   return data || 0;
 };
 
@@ -129,6 +140,8 @@ export const useBudgetState = () => {
     mutationFn: async (data: Partial<WeeklyBudgetState>) => {
       if (!userId) return;
       
+      console.log('[useBudgetState] Saving budget state update...', data);
+      
       const payload: any = {
         user_id: userId,
         updated_at: new Date().toISOString()
@@ -143,14 +156,19 @@ export const useBudgetState = () => {
         .upsert(payload, { onConflict: 'user_id' })
         .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error('[useBudgetState] Upsert error:', error);
+        throw error;
+      }
+      
+      console.log('[useBudgetState] Save successful.');
       return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budgetState', userId] });
     },
     onError: (error: any) => {
-      console.error('[useBudgetState] Save error:', error);
+      console.error('[useBudgetState] Mutation error:', error);
       toast.error(`Failed to save: ${error.message}`);
     }
   });
@@ -165,20 +183,30 @@ export const useBudgetState = () => {
     payFrequency: state?.config?.payFrequency || 'weekly'
   }), [state, annualIncome]);
 
-  const totalSpentWeekly = useMemo(() => modules.reduce((total, module) => 
-    total + module.categories.reduce((catTotal, category) => {
-      if (category.id === FUEL_CATEGORY_ID) return catTotal;
-      return catTotal + category.tokens.filter(t => t.spent).reduce((tokenTotal, token) => tokenTotal + token.value, 0)
-    }, 0)
-  , 0), [modules]);
+  const totalSpentWeekly = useMemo(() => {
+    const total = modules.reduce((total, module) => 
+      total + module.categories.reduce((catTotal, category) => {
+        // Fuel is excluded from weekly total as it's a 4-week budget
+        if (category.id === FUEL_CATEGORY_ID) return catTotal;
+        return catTotal + category.tokens
+          .filter(t => t.spent)
+          .reduce((tokenTotal, token) => tokenTotal + token.value, 0);
+      }, 0)
+    , 0);
+    console.log(`[useBudgetState] Calculated total weekly spent: ${total}`);
+    return total;
+  }, [modules]);
 
   const handleTokenSpend = useCallback(async (categoryId: string, tokenId: string) => {
     const category = modules.flatMap(m => m.categories).find(c => c.id === categoryId);
     const token = category?.tokens.find(t => t.id === tokenId);
-    const amount = token?.value || 0;
+    
+    if (!token || token.spent) return;
+
+    const amount = token.value;
     const categoryName = category?.name || 'Unknown Category';
 
-    console.log(`[handleTokenSpend] Logging spend:`, { categoryId, categoryName, amount });
+    console.log(`[useBudgetState] Logging token spend: ${amount} in ${categoryName}`);
 
     const updatedModules = modules.map(module => ({
       ...module,
@@ -186,80 +214,96 @@ export const useBudgetState = () => {
         if (category.id === categoryId) {
           return {
             ...category,
-            tokens: category.tokens.map(token => token.id === tokenId ? { ...token, spent: true } : token)
+            tokens: category.tokens.map(t => t.id === tokenId ? { ...t, spent: true } : t)
           };
         }
         return category;
       })
     }));
 
-    const { error: txError } = await supabase.from('budget_transactions').insert({
-      user_id: userId!,
-      amount,
-      category_id: categoryId,
-      category_name: categoryName,
-      transaction_type: 'token_spend'
-    });
+    try {
+      const { error: txError } = await supabase.from('budget_transactions').insert({
+        user_id: userId!,
+        amount,
+        category_id: categoryId,
+        category_name: categoryName,
+        transaction_type: 'token_spend'
+      });
 
-    if (txError) {
-      console.error(`[handleTokenSpend] Transaction insert error:`, txError);
-    } else {
-      console.log(`[handleTokenSpend] Transaction inserted successfully for ${categoryName}`);
+      if (txError) throw txError;
+
+      await saveMutation.mutateAsync({ current_tokens: updatedModules });
+      toast.success(`Logged ${formatCurrency(amount)} for ${categoryName}`);
+      queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
+    } catch (err: any) {
+      console.error('[useBudgetState] Token spend failed:', err);
+      toast.error(`Failed to log spend: ${err.message}`);
     }
-
-    await saveMutation.mutateAsync({ current_tokens: updatedModules });
-    toast.success(`Logged ${formatCurrency(amount)} for ${categoryName}`);
-    queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
   }, [modules, userId, saveMutation, queryClient]);
 
   const handleCustomSpend = useCallback(async (categoryId: string, amount: number) => {
     const category = modules.flatMap(m => m.categories).find(c => c.id === categoryId);
     const categoryName = category?.name || 'Unknown Category';
 
-    console.log(`[handleCustomSpend] Logging custom spend:`, { categoryId, categoryName, amount });
+    console.log(`[useBudgetState] Logging custom spend: ${amount} in ${categoryName}`);
 
     const updatedModules = modules.map(module => ({
       ...module,
       categories: module.categories.map(category => {
         if (category.id === categoryId) {
-          const newToken = { id: `custom-${categoryId}-${Date.now()}`, value: amount, spent: true };
+          const newToken = { 
+            id: `custom-${categoryId}-${Date.now()}`, 
+            value: amount, 
+            spent: true 
+          };
           return { ...category, tokens: [...category.tokens, newToken] };
         }
         return category;
       })
     }));
 
-    const { error: txError } = await supabase.from('budget_transactions').insert({
-      user_id: userId!,
-      amount,
-      category_id: categoryId,
-      category_name: categoryName,
-      transaction_type: 'custom_spend'
-    });
+    try {
+      const { error: txError } = await supabase.from('budget_transactions').insert({
+        user_id: userId!,
+        amount,
+        category_id: categoryId,
+        category_name: categoryName,
+        transaction_type: 'custom_spend'
+      });
 
-    if (txError) {
-      console.error(`[handleCustomSpend] Transaction insert error:`, txError);
-    } else {
-      console.log(`[handleCustomSpend] Transaction inserted successfully for ${categoryName}`);
+      if (txError) throw txError;
+
+      await saveMutation.mutateAsync({ current_tokens: updatedModules });
+      toast.success(`Logged custom spend: ${formatCurrency(amount)} in ${categoryName}`);
+      queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
+    } catch (err: any) {
+      console.error('[useBudgetState] Custom spend failed:', err);
+      toast.error(`Failed to log custom spend: ${err.message}`);
     }
-
-    await saveMutation.mutateAsync({ current_tokens: updatedModules });
-    toast.success(`Logged custom spend: ${formatCurrency(amount)} in ${categoryName}`);
-    queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
   }, [modules, userId, saveMutation, queryClient]);
 
   const handleGenericSpend = useCallback(async (amount: number) => {
-    await supabase.from('budget_transactions').insert({
-      user_id: userId!,
-      amount,
-      category_name: 'Generic Spend',
-      transaction_type: 'generic_spend'
-    });
-    toast.success(`Logged generic spend: ${formatCurrency(amount)}`);
-    queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
+    console.log(`[useBudgetState] Logging generic spend: ${amount}`);
+    try {
+      const { error: txError } = await supabase.from('budget_transactions').insert({
+        user_id: userId!,
+        amount,
+        category_name: 'Generic Spend',
+        transaction_type: 'generic_spend'
+      });
+
+      if (txError) throw txError;
+
+      toast.success(`Logged generic spend: ${formatCurrency(amount)}`);
+      queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
+    } catch (err: any) {
+      console.error('[useBudgetState] Generic spend failed:', err);
+      toast.error(`Failed to log generic spend: ${err.message}`);
+    }
   }, [userId, queryClient]);
 
   const saveStrategy = useCallback(async (newIncome: number, updatedModules: Module[]) => {
+    console.log(`[useBudgetState] Saving new budget strategy. Income: ${newIncome}`);
     const weeklyIncome = newIncome / WEEKS_IN_YEAR;
     
     const finalModules = updatedModules.map(module => ({
@@ -273,10 +317,15 @@ export const useBudgetState = () => {
           newBaseValue = Math.round((weeklyIncome * (category.percentage || 0) / 100) * 100) / 100;
         }
         
-        newBaseValue = Math.round(newBaseValue / 5) * 5;
+        // Round to nearest $5 for token generation
+        const roundedBaseValue = Math.round(newBaseValue / 5) * 5;
         
-        const spentAmount = category.tokens.filter(t => t.spent).reduce((sum, t) => sum + t.value, 0);
-        const freshTokens = generateTokens(category.id, newBaseValue, category.tokenValue || 10);
+        // Preserve spent status if possible by mapping old spent tokens to new ones
+        const spentAmount = category.tokens
+          .filter(t => t.spent)
+          .reduce((sum, t) => sum + t.value, 0);
+          
+        const freshTokens = generateTokens(category.id, roundedBaseValue, category.tokenValue || 10);
         
         let currentSpent = 0;
         const tokensWithSpent = freshTokens.map(t => {
@@ -289,7 +338,7 @@ export const useBudgetState = () => {
 
         return {
           ...category,
-          baseValue: newBaseValue,
+          baseValue: roundedBaseValue,
           tokens: tokensWithSpent
         };
       })
@@ -303,21 +352,44 @@ export const useBudgetState = () => {
   }, [saveMutation]);
 
   const handleMondayReset = useCallback(async () => {
-    const totalBudget = modules.reduce((sum, m) => sum + m.categories.reduce((cs, c) => c.id !== FUEL_CATEGORY_ID ? cs + c.baseValue : cs, 0), 0);
+    console.log('[useBudgetState] Performing weekly reset...');
+    const totalBudget = modules.reduce((sum, m) => 
+      sum + m.categories.reduce((cs, c) => c.id !== FUEL_CATEGORY_ID ? cs + c.baseValue : cs, 0), 0
+    );
     const difference = totalBudget - totalSpentWeekly;
     let newFund = gearTravelFund + (difference > 0 ? difference : 0);
+
+    console.log(`[useBudgetState] Reset stats: Budget=${totalBudget}, Spent=${totalSpentWeekly}, Surplus=${difference}`);
 
     const resetModules = modules.map(module => ({
       ...module,
       categories: module.categories.map(category => {
+        // Fuel doesn't reset weekly
         if (category.id === FUEL_CATEGORY_ID) return category;
-        return { ...category, tokens: category.tokens.map(t => ({ ...t, spent: false })) };
+        
+        // Remove custom tokens and reset spent status on base tokens
+        const baseTokens = category.tokens
+          .filter(t => !t.id.startsWith('custom-'))
+          .map(t => ({ ...t, spent: false }));
+          
+        return { ...category, tokens: baseTokens };
       })
     }));
 
-    await saveMutation.mutateAsync({ current_tokens: resetModules, gear_travel_fund: newFund });
+    await saveMutation.mutateAsync({ 
+      current_tokens: resetModules, 
+      gear_travel_fund: newFund,
+      last_reset_date: new Date().toISOString().split('T')[0]
+    });
+    
     toast.success('Weekly reset complete!');
-    setBriefingData({ totalSpent: totalSpentWeekly, totalBudget, totalSurplus: Math.max(0, difference), newGearTravelFund: newFund, categoryBriefings: [] });
+    setBriefingData({ 
+      totalSpent: totalSpentWeekly, 
+      totalBudget, 
+      totalSurplus: Math.max(0, difference), 
+      newGearTravelFund: newFund, 
+      categoryBriefings: [] 
+    });
   }, [modules, totalSpentWeekly, gearTravelFund, saveMutation]);
 
   const handleFundAdjustment = useCallback(async (amount: number) => {
@@ -325,11 +397,14 @@ export const useBudgetState = () => {
   }, [saveMutation]);
 
   const handleFullReset = useCallback(async () => {
+    console.log('[useBudgetState] Performing FULL reset...');
     const resetModules = modules.map(module => ({
       ...module,
       categories: module.categories.map(category => ({
         ...category,
-        tokens: category.tokens.map(t => ({ ...t, spent: false }))
+        tokens: category.tokens
+          .filter(t => !t.id.startsWith('custom-'))
+          .map(t => ({ ...t, spent: false }))
       }))
     }));
     await saveMutation.mutateAsync({ current_tokens: resetModules, gear_travel_fund: 0 });
@@ -337,7 +412,8 @@ export const useBudgetState = () => {
   }, [modules, saveMutation]);
 
   const resetToInitialBudgets = useCallback(async () => {
-    await saveMutation.mutateAsync({ current_tokens: initialModules });
+    console.log('[useBudgetState] Restoring initial budgets...');
+    await saveMutation.mutateAsync({ current_tokens: JSON.parse(JSON.stringify(initialModules)) });
     toast.success('Restored initial budgets');
   }, [saveMutation]);
 

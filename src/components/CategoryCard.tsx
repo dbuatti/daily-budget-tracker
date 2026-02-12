@@ -17,7 +17,11 @@ interface CategoryCardProps {
 const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) => {
   const { handleCustomSpend } = useBudgetState();
   
-  const initialWeeklyBudget = category.baseValue || category.tokens.reduce((sum, token) => sum + token.value, 0);
+  // Calculate the total value of all tokens currently in the category
+  const totalTokenValue = category.tokens.reduce((sum, token) => sum + token.value, 0);
+  
+  // Use the higher of baseValue or totalTokenValue as the initial budget for display
+  const initialWeeklyBudget = Math.max(category.baseValue || 0, totalTokenValue);
 
   const totalSpentInThisCategory = category.tokens
     .filter(t => t.spent)
@@ -27,6 +31,7 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) =
   let currentStatus = initialWeeklyBudget - totalSpentInThisCategory;
   let statusLabel = "Initial Budget";
 
+  // Special handling for Fuel (4-week budget)
   if (category.id === FUEL_CATEGORY_ID) {
     displayBudget = initialWeeklyBudget * 4;
     currentStatus = displayBudget - totalSpentInThisCategory;
@@ -53,11 +58,11 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) =
           <span className={
             `text-lg font-extrabold ${currentStatus < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`
           }>
-            {formatCurrency(currentStatus)}
+            {formatCurrency(currentStatus).replace('A$', '$')}
           </span>
         </CardTitle>
         <p className="text-xs text-gray-500 dark:text-gray-400">
-            {statusLabel}: {formatCurrency(displayBudget)}
+            {statusLabel}: {formatCurrency(displayBudget).replace('A$', '$')}
         </p>
       </CardHeader>
       <CardContent className="flex flex-wrap gap-4 p-4 justify-start">
