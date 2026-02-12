@@ -37,7 +37,7 @@ const generateTokens = (baseId: string, totalValue: number, preferredDenom: numb
  * Merges the saved state from the database with the initial hardcoded modules.
  */
 const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Module[] => {
-  console.log('[useBudgetState] >>> START MERGE');
+  console.log('[useBudgetState] >>> START MERGE & AUDIT');
   
   if (!savedModules || savedModules.length === 0) {
     console.log('[useBudgetState] No saved modules found, using initial defaults.');
@@ -65,6 +65,7 @@ const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Mod
   }
 
   // DEEP DIAGNOSTIC & SELF-HEALING
+  let healingOccurred = false;
   mergedModules.forEach(module => {
     module.categories.forEach(category => {
       const baseTokens = category.tokens.filter(t => !t.id.startsWith('custom-'));
@@ -72,26 +73,31 @@ const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Mod
       const sumOfBaseTokens = baseTokens.reduce((sum, t) => sum + t.value, 0);
       
       if (category.id === 'A1') {
-        console.log(`[useBudgetState] Groceries (A1) Token Audit:`, {
+        console.log(`[useBudgetState] Groceries (A1) Pre-Heal Audit:`, {
           baseValue: category.baseValue,
           sumOfBase: sumOfBaseTokens,
           baseTokenCount: baseTokens.length,
-          customTokenCount: customTokens.length,
-          allTokens: category.tokens.map(t => `${t.id}: $${t.value} (${t.spent ? 'spent' : 'unspent'})`)
+          customTokenCount: customTokens.length
         });
       }
 
       // Self-healing: If base tokens don't match baseValue, regenerate them while preserving spent amount
       if (Math.abs(sumOfBaseTokens - category.baseValue) > 0.01) {
-        console.warn(`[useBudgetState] Healing category ${category.name} (${category.id}): Mismatch detected.`);
+        console.warn(`[useBudgetState] Healing category ${category.name} (${category.id}): Mismatch detected. Expected ${category.baseValue}, found ${sumOfBaseTokens}`);
+        healingOccurred = true;
         
         const totalBaseSpent = baseTokens.filter(t => t.spent).reduce((sum, t) => sum + t.value, 0);
         const freshBaseTokens = generateTokens(category.id, category.baseValue, category.tokenValue || 10);
         
-        let currentSpent = 0;
+        let currentSpentPool = totalBaseSpent;
         const healedBaseTokens = freshBaseTokens.map(t => {
-          if (currentSpent < totalBaseSpent) {
-            currentSpent += t.value;
+          if (currentSpentPool >= t.value) {
+            currentSpentPool -= t.value;
+            return { ...t, spent: true };
+          } else if (currentSpentPool > 0) {
+            // Partial spend logic: if we have some spent amount left but less than a full token, 
+            // we mark this token as spent to be safe (conservative budgeting)
+            currentSpentPool = 0;
             return { ...t, spent: true };
           }
           return t;
@@ -101,6 +107,17 @@ const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Mod
       }
     });
   });
+
+  if (healingOccurred) {
+    const groceries = mergedModules.flatMap(m => m.categories).find(c => c.id === 'A1');
+    if (groceries) {
+      console.log('[useBudgetState] Groceries (A1) Post-Heal State:', {
+        baseValue: groceries.baseValue,
+        sumOfTokens: groceries.tokens.reduce((sum, t) => sum + t.value, 0),
+        tokens: groceries.tokens.map(t => `${t.id}: $${t.value} (${t.spent ? 'spent' : 'unspent'})`)
+      });
+    }
+  }
 
   console.log('[useBudgetState] <<< END MERGE');
   return mergedModules;
@@ -172,12 +189,6 @@ export const useBudgetState = () => {
     mutationFn: async (data: Partial<WeeklyBudgetState>) => {
       if (!userId) return;
       
-      // Log the payload before sending to Supabase
-      if (data.current_tokens) {
-        const groceries = data.current_tokens.flatMap(m => m.categories).find(c => c.id === 'A1');
-        console.log('[useBudgetState] PRE-SAVE Groceries Check:', groceries?.tokens.map(t => `${t.id}: $${t.value}`));
-      }
-
       const payload: any = { user_id: userId, updated_at: new Date().toISOString() };
       if (data.current_tokens) payload.current_tokens = data.current_tokens;
       if (data.gear_travel_fund !== undefined) payload.gear_travel_fund = data.gear_travel_fund;
@@ -265,7 +276,8 @@ export const useBudgetState = () => {
       ...module,
       categories: module.categories.map(cat => {
         if (cat.id === categoryId) {
-          const newToken = { id: `custom-${categoryId}-${Date.now()}`, value: amount, spent: true };
+          // Use a more unique ID to avoid React key collisions
+          const newToken = { id: `custom-${categoryId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, value: amount, spent: true };
           return { ...cat, tokens: [...cat.tokens, newToken] };
         }
         return cat;
@@ -330,10 +342,13 @@ export const useBudgetState = () => {
 
         const freshBaseTokens = generateTokens(category.id, roundedBaseValue, category.tokenValue || 10);
         
-        let currentSpent = 0;
+        let currentSpentPool = baseSpentAmount;
         const tokensWithSpent = freshBaseTokens.map(t => {
-          if (currentSpent < baseSpentAmount) {
-            currentSpent += t.value;
+          if (currentSpentPool >= t.value) {
+            currentSpentPool -= t.value;
+            return { ...t, spent: true };
+          } else if (currentSpentPool > 0) {
+            currentSpentPool = 0;
             return { ...t, spent: true };
           }
           return t;
