@@ -10,6 +10,7 @@ import { formatCurrency } from '@/lib/format';
 import { toast } from 'sonner';
 import { 
   GENERIC_MODULE_ID, 
+  GENERIC_CATEGORY_ID,
   initialModules, 
   FUEL_CATEGORY_ID, 
   DEFAULT_ANNUAL_INCOME, 
@@ -31,8 +32,6 @@ const generateTokens = (baseId: string, totalValue: number, preferredDenom: numb
 };
 
 const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Module[] => {
-  console.log('[useBudgetState] >>> START MERGE & AUDIT');
-  
   if (!savedModules || savedModules.length === 0) {
     return JSON.parse(JSON.stringify(initialModules));
   }
@@ -54,25 +53,13 @@ const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Mod
     }
   }
 
-  // Self-Healing: Ensure base tokens always sum to baseValue
   mergedModules.forEach(module => {
     module.categories.forEach(category => {
       const baseTokens = category.tokens.filter(t => t.id.includes('-base-'));
       const otherTokens = category.tokens.filter(t => !t.id.includes('-base-'));
       const sumOfBase = baseTokens.reduce((sum, t) => sum + t.value, 0);
 
-      // Log audit for key categories
-      if (category.id === 'A1') {
-        console.log(`[useBudgetState] ${category.name} (${category.id}) Audit:`, {
-          baseValue: category.baseValue,
-          sumOfBase,
-          baseTokenCount: baseTokens.length,
-          otherTokenCount: otherTokens.length
-        });
-      }
-
       if (Math.abs(sumOfBase - category.baseValue) > 0.01) {
-        console.warn(`[useBudgetState] Healing ${category.name}: Base tokens sum to ${sumOfBase}, expected ${category.baseValue}`);
         const totalBaseSpent = baseTokens.filter(t => t.spent).reduce((sum, t) => sum + t.value, 0);
         const freshBase = generateTokens(category.id, category.baseValue, category.tokenValue || 10);
         
@@ -98,19 +85,19 @@ export const useBudgetState = () => {
   const { data: state, isLoading, isError } = useQuery({
     queryKey: ['budgetState', userId],
     queryFn: async () => {
-      console.log(`[useBudgetState] Fetching state for user: ${userId}`);
       const { data, error } = await supabase.from('weekly_budget_state').select('*').eq('user_id', userId).single();
       
       if (error && error.code !== 'PGRST116') throw error;
       
       if (!data) {
         return { 
-          user_id: userId, 
+          user_id: userId!, 
           current_tokens: initialModules, 
           gear_travel_fund: 0, 
           annual_income: DEFAULT_ANNUAL_INCOME,
-          last_reset_date: new Date().toISOString().split('T')[0]
-        };
+          last_reset_date: new Date().toISOString().split('T')[0],
+          updated_at: new Date().toISOString()
+        } as WeeklyBudgetState;
       }
       
       const s = data as WeeklyBudgetState;
@@ -120,21 +107,30 @@ export const useBudgetState = () => {
     enabled: !!userId,
   });
 
+  const { data: spentToday = 0, refetch: refetchSpentToday } = useQuery({
+    queryKey: ['spentToday', userId],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_daily_spent_amount', { p_user_id: userId });
+      if (error) throw error;
+      return Number(data || 0);
+    },
+    enabled: !!userId,
+  });
+
   const saveMutation = useMutation({
     mutationFn: async (data: Partial<WeeklyBudgetState>) => {
       const payload = { ...data, user_id: userId, updated_at: new Date().toISOString() };
       return await supabase.from('weekly_budget_state').upsert(payload, { onConflict: 'user_id' });
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['budgetState', userId] })
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['budgetState', userId] });
+      queryClient.invalidateQueries({ queryKey: ['spentToday', userId] });
+    }
   });
 
-  // RECONCILIATION LOGIC: Sync tokens with transaction history
   const reconcile = useCallback(async () => {
     if (!state || !userId) return;
 
-    console.log('[useBudgetState] >>> START RECONCILIATION');
-    
-    // Fetch transactions since the last reset date
     const { data: txs, error: txError } = await supabase
       .from('budget_transactions')
       .select('*')
@@ -142,12 +138,7 @@ export const useBudgetState = () => {
       .gte('created_at', state.last_reset_date)
       .order('created_at', { ascending: false });
 
-    if (txError) {
-      console.error('[useBudgetState] Reconciliation failed to fetch transactions:', txError);
-      return;
-    }
-
-    console.log(`[useBudgetState] Found ${txs?.length || 0} transactions since ${state.last_reset_date}`);
+    if (txError) return;
 
     let hasChanges = false;
     const updatedModules = state.current_tokens.map(module => ({
@@ -157,18 +148,8 @@ export const useBudgetState = () => {
         const totalTxSpent = catTxs.reduce((sum, t) => sum + Number(t.amount), 0);
         const totalTokenSpent = category.tokens.filter(t => t.spent).reduce((sum, t) => sum + t.value, 0);
 
-        if (category.id === 'A1') {
-          console.log(`[useBudgetState] Reconcile Audit for ${category.name}:`, {
-            totalTxSpent,
-            totalTokenSpent,
-            txCount: catTxs.length
-          });
-        }
-
-        // If we've spent more in transactions than we have spent tokens, add a sync token
         if (totalTxSpent > totalTokenSpent + 0.01) {
           const diff = Math.round((totalTxSpent - totalTokenSpent) * 100) / 100;
-          console.log(`[useBudgetState] Reconciling ${category.name}: Adding $${diff} sync token.`);
           hasChanges = true;
           return {
             ...category,
@@ -183,20 +164,16 @@ export const useBudgetState = () => {
     }));
 
     if (hasChanges) {
-      console.log('[useBudgetState] Reconciliation complete. Saving changes...');
       await saveMutation.mutateAsync({ current_tokens: updatedModules });
       toast.info("Budget synced with transaction history.");
-    } else {
-      console.log('[useBudgetState] Reconciliation complete. No changes needed.');
     }
   }, [state, userId, saveMutation]);
 
-  // Run reconciliation when state is loaded
   useEffect(() => { 
     if (state) {
       reconcile();
     }
-  }, [state?.updated_at, userId]); // Re-run if DB state updates or user changes
+  }, [state?.updated_at, userId]);
 
   const modules = state?.current_tokens || [];
   
@@ -222,7 +199,6 @@ export const useBudgetState = () => {
       })
     }));
 
-    // Log the transaction first
     await supabase.from('budget_transactions').insert({
       user_id: userId!,
       amount: token.value,
@@ -231,7 +207,6 @@ export const useBudgetState = () => {
       transaction_type: 'token_spend'
     });
 
-    // Update the state
     await saveMutation.mutateAsync({ current_tokens: updatedModules });
     toast.success(`Spent ${formatCurrency(token.value)} in ${category?.name}`);
   }, [modules, userId, saveMutation]);
@@ -254,7 +229,6 @@ export const useBudgetState = () => {
       })
     }));
 
-    // Log the transaction
     await supabase.from('budget_transactions').insert({
       user_id: userId!,
       amount,
@@ -267,9 +241,37 @@ export const useBudgetState = () => {
     toast.success(`Logged ${formatCurrency(amount)} custom spend`);
   }, [modules, userId, saveMutation]);
 
+  const handleGenericSpend = useCallback(async (amount: number) => {
+    return handleCustomSpend(GENERIC_CATEGORY_ID, amount);
+  }, [handleCustomSpend]);
+
+  const handleMondayReset = useCallback(async () => {
+    toast.info("Monday reset logic pending implementation.");
+  }, []);
+
+  const handleFullReset = useCallback(async () => {
+    await saveMutation.mutateAsync({ 
+      current_tokens: initialModules,
+      gear_travel_fund: 0
+    });
+    toast.success("Budget fully reset.");
+  }, [saveMutation]);
+
+  const handleFundAdjustment = useCallback(async (amount: number) => {
+    await saveMutation.mutateAsync({ gear_travel_fund: amount });
+    toast.success(`Fund adjusted to ${formatCurrency(amount)}`);
+  }, [saveMutation]);
+
+  const resetToInitialBudgets = useCallback(async () => {
+    await saveMutation.mutateAsync({ current_tokens: initialModules });
+    toast.success("Reset to initial budgets.");
+  }, [saveMutation]);
+
   return {
     modules,
     totalSpent: totalSpentWeekly,
+    spentToday,
+    refetchSpentToday,
     gearTravelFund: state?.gear_travel_fund || 0,
     config: { 
       annualIncome: state?.annual_income || DEFAULT_ANNUAL_INCOME, 
@@ -280,6 +282,13 @@ export const useBudgetState = () => {
     isError,
     handleCustomSpend,
     handleTokenSpend,
+    handleGenericSpend,
+    handleMondayReset,
+    handleFullReset,
+    handleFundAdjustment,
+    resetToInitialBudgets,
+    resetBriefing: null,
+    clearBriefing: () => {},
     reconcile,
     saveStrategy: async (income: number, updatedModules: Module[]) => {
       return await saveMutation.mutateAsync({ 

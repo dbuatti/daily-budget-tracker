@@ -10,13 +10,21 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { toast } from 'sonner';
 
 const LogTransaction = () => {
-  const { modules, isLoading, handleTokenSpend, resetBriefing, clearBriefing, spentToday = 0, isLoading: isStateLoading, totalSpent: totalSpentWeekly, refetchSpentToday } = useBudgetState();
+  const { 
+    modules, 
+    isLoading, 
+    handleTokenSpend, 
+    resetBriefing, 
+    clearBriefing, 
+    spentToday, 
+    totalSpent: totalSpentWeekly, 
+    refetchSpentToday 
+  } = useBudgetState();
+  
   const { profile } = useUserProfile();
   
-  // State for debug panel
   const [rawTransactions, setRawTransactions] = React.useState<any[]>([]);
   const [queryStatus, setQueryStatus] = React.useState<string>('idle');
   const [debugInfo, setDebugInfo] = useState<any>(null);
@@ -27,7 +35,7 @@ const LogTransaction = () => {
     const timestamp = new Date().toISOString();
     const logMessage = `[${timestamp}] ${message}`;
     console.log(logMessage);
-    setLogs(prev => [logMessage, ...prev].slice(0, 50)); // Keep last 50 logs
+    setLogs(prev => [logMessage, ...prev].slice(0, 50));
   }, []);
 
   const fetchRawTransactions = async () => {
@@ -67,7 +75,6 @@ const LogTransaction = () => {
 
       addLog(`User ID: ${user.id}`);
 
-      // 1. Get user profile
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('timezone, day_rollover_hour')
@@ -81,9 +88,7 @@ const LogTransaction = () => {
       }
 
       const timezone = profileData?.timezone || 'UTC';
-      const rolloverHour = profileData?.day_rollover_hour || 0;
 
-      // 2. Call the debug RPC to get detailed info
       addLog('Calling debug_daily_spent RPC...');
       const { data: debugResult, error: debugError } = await supabase
         .rpc('debug_daily_spent', { p_user_id: user.id });
@@ -95,7 +100,6 @@ const LogTransaction = () => {
         setDebugInfo(debugResult);
       }
 
-      // 3. Also call the original RPC to compare
       addLog('Calling get_daily_spent_amount RPC...');
       const { data: rpcResult, error: rpcError } = await supabase
         .rpc('get_daily_spent_amount', { p_user_id: user.id });
@@ -106,7 +110,6 @@ const LogTransaction = () => {
         addLog(`get_daily_spent_amount returned: ${rpcResult}`);
       }
 
-      // 4. Get all transactions in last 24h for comparison
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const { data: last24hTx } = await supabase
         .from('budget_transactions')
@@ -117,7 +120,6 @@ const LogTransaction = () => {
 
       addLog(`Transactions in last 24h: ${last24hTx?.length || 0}`);
 
-      // 5. Log each transaction with timezone conversion
       if (last24hTx) {
         for (const tx of last24hTx) {
           const txDate = new Date(tx.created_at);
@@ -148,7 +150,6 @@ const LogTransaction = () => {
     fetchRawTransactions();
   }, []);
 
-  // Auto-refresh spentToday when profile changes
   useEffect(() => {
     if (profile) {
       addLog(`Profile loaded: timezone=${profile.timezone}, rollover=${profile.day_rollover_hour}`);
@@ -164,7 +165,6 @@ const LogTransaction = () => {
     );
   }
 
-  // Filter out the hidden generic module from the main display
   const visibleModules = modules.filter(module => module.id !== GENERIC_MODULE_ID);
   
   const weeklyTokenBudget = TOTAL_TOKEN_BUDGET;
@@ -178,9 +178,7 @@ const LogTransaction = () => {
         Log Transaction
       </h1>
       
-      {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-        {/* Left Column - Daily Spend */}
         <div className="space-y-6">
           <div className="p-6 bg-indigo-600 dark:bg-indigo-800 rounded-2xl shadow-2xl text-white text-center">
             <p className="text-sm font-medium opacity-80 uppercase tracking-wider">
@@ -199,7 +197,6 @@ const LogTransaction = () => {
           <QuickSpendButtons />
         </div>
 
-        {/* Right Column - Weekly Total */}
         <div className="space-y-6">
           <div className="p-6 bg-indigo-100 dark:bg-indigo-900/50 rounded-2xl shadow-xl border-2 border-indigo-300 dark:border-indigo-700 text-center">
             <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">
@@ -213,7 +210,6 @@ const LogTransaction = () => {
             </p>
           </div>
 
-          {/* Simple weekly progress visualization */}
           <div className="p-4 bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-800">
             <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Weekly Token Progress</h3>
             <div className="relative pt-1">
@@ -236,7 +232,6 @@ const LogTransaction = () => {
         </div>
       </div>
 
-      {/* Module Sections - Full Width Below */}
       <div className="space-y-8">
         {visibleModules.map((module) => (
           <ModuleSection
@@ -247,7 +242,6 @@ const LogTransaction = () => {
         ))}
       </div>
 
-      {/* Monday Morning Briefing Dialog */}
       {resetBriefing && (
         <MondayBriefingDialog
           isOpen={!!resetBriefing}
@@ -256,7 +250,6 @@ const LogTransaction = () => {
         />
       )}
 
-      {/* COMPREHENSIVE DEBUG PANEL */}
       <Card className="mt-8 rounded-2xl shadow-xl border-2 border-orange-300 dark:border-orange-700 bg-orange-50/50 dark:bg-orange-900/30">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg font-bold text-orange-800 dark:text-orange-300 flex items-center justify-between">
@@ -287,7 +280,6 @@ const LogTransaction = () => {
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* User Profile Info */}
           <div className="p-3 bg-orange-100 dark:bg-orange-900/50 rounded-lg border border-orange-200 dark:border-orange-800">
             <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">User Profile</h4>
             <div className="text-xs space-y-1 text-orange-900 dark:text-orange-200">
@@ -297,7 +289,6 @@ const LogTransaction = () => {
             </div>
           </div>
 
-          {/* Debug RPC Result */}
           {debugInfo && (
             <div className="p-3 bg-orange-100 dark:bg-orange-900/50 rounded-lg border border-orange-200 dark:border-orange-800">
               <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">Debug RPC Result</h4>
@@ -315,7 +306,6 @@ const LogTransaction = () => {
             </div>
           )}
 
-          {/* Recent Transactions Table */}
           <div className="overflow-hidden rounded-lg border border-orange-200 dark:border-orange-800">
             <div className="bg-orange-100 dark:bg-orange-900/50 p-2">
               <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm">
@@ -366,7 +356,6 @@ const LogTransaction = () => {
             </div>
           </div>
 
-          {/* Activity Log */}
           <div className="overflow-hidden rounded-lg border border-orange-200 dark:border-orange-800">
             <div className="bg-orange-100 dark:bg-orange-900/50 p-2 flex items-center">
               <Terminal className="w-4 h-4 mr-2 text-orange-800 dark:text-orange-300" />
@@ -385,14 +374,6 @@ const LogTransaction = () => {
                 ))
               )}
             </div>
-          </div>
-
-          {/* Console Log Instructions */}
-          <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-800">
-            <h4 className="font-semibold text-blue-800 dark:text-blue-300 text-sm mb-2">💡 Check Browser Console</h4>
-            <p className="text-xs text-blue-900 dark:text-blue-200">
-              Open DevTools Console (F12) to see additional logs. The Supabase RPC also logs to the database console.
-            </p>
           </div>
         </CardContent>
       </Card>
