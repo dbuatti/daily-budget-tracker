@@ -17,11 +17,21 @@ export const useBudgetCalculator = (annualIncome: number, modules: Module[]) => 
 
     const scaledModules = modules.map((module) => {
       const scaledCategories = module.categories.map((category) => {
-        const percentage = category.percentage || 0;
-        totalPercentage += percentage;
+        let targetValue = 0;
 
-        // 2. Percentage Allocation
-        const targetValue = weeklyRawLimit * (percentage / 100);
+        // 2. Allocation Logic
+        if (category.frequency === 'monthly') {
+          // Monthly Spread: Divide total monthly amount by 4
+          targetValue = (category.totalMonthlyAmount || 0) / 4;
+        } else if (category.mode === 'percentage') {
+          // Percentage Allocation
+          const percentage = category.percentage || 0;
+          totalPercentage += percentage;
+          targetValue = weeklyRawLimit * (percentage / 100);
+        } else {
+          // Fixed Weekly Amount
+          targetValue = category.baseValue || 0;
+        }
         
         // 3. Round to nearest $5 (The "Tokenization" rule)
         const roundedValue = Math.round(targetValue / 5) * 5;
@@ -31,10 +41,7 @@ export const useBudgetCalculator = (annualIncome: number, modules: Module[]) => 
         totalDust += dust;
 
         // 5. Automatic Denominations Logic
-        // Small (< $30): $5 tokens
-        // Mid ($30 - $100): $10 tokens
-        // Large (> $100): $20 tokens
-        let denom = 10;
+        let denom = category.tokenValue || 10;
         if (roundedValue < 30) {
           denom = 5;
         } else if (roundedValue >= 100) {
@@ -55,7 +62,6 @@ export const useBudgetCalculator = (annualIncome: number, modules: Module[]) => 
           remaining -= denom;
         }
 
-        // Handle any remainder from denomination (should be multiple of 5)
         if (remaining > 0) {
           tokens.push({
             id: `${category.id}-${count++}`,
@@ -77,14 +83,18 @@ export const useBudgetCalculator = (annualIncome: number, modules: Module[]) => 
       };
     });
 
-    // 100% Check / Warning
-    const isOverAllocated = totalPercentage > 100;
+    const totalWeeklyAllocated = scaledModules.reduce((sum, m) => 
+      sum + m.categories.reduce((cs, c) => cs + c.baseValue, 0)
+    , 0);
+
+    const isOverAllocated = totalWeeklyAllocated > weeklyRawLimit;
 
     return { 
       scaledModules, 
       totalDust, 
       weeklyRawLimit, 
       totalPercentage,
+      totalWeeklyAllocated,
       isOverAllocated 
     };
   }, [annualIncome, modules, weeklyRawLimit]);

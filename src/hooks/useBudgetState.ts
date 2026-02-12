@@ -24,30 +24,22 @@ const generateTokens = (baseId: string, totalValue: number, preferredDenom: numb
 };
 
 const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Module[] => {
-  // Start with a deep copy of initial modules
   const mergedModules: Module[] = JSON.parse(JSON.stringify(initialModules));
   const savedModuleMap = new Map(savedModules.map(m => [m.id, m]));
   const mergedModuleMap = new Map(mergedModules.map(m => [m.id, m]));
 
-  // 1. Update existing modules and their categories
   for (const initialModule of mergedModules) {
     const savedModule = savedModuleMap.get(initialModule.id);
     if (savedModule) {
       const initialCategoryMap = new Map(initialModule.categories.map(c => [c.id, c]));
-      const savedCategoryMap = new Map(savedModule.categories.map(c => [c.id, c]));
-      
-      // Update existing categories and add new ones from saved state
       const finalCategories: Category[] = [];
       
-      // First, process all categories that exist in the saved state
       for (const savedCategory of savedModule.categories) {
         const initialCategory = initialCategoryMap.get(savedCategory.id);
         if (initialCategory) {
-          // Merge saved state into initial category structure
           const mergedCategory = {
             ...initialCategory,
             ...savedCategory,
-            // Ensure tokens are merged correctly to preserve spent status
             tokens: savedCategory.tokens.map(savedToken => {
               const initialToken = initialCategory.tokens.find(t => t.id === savedToken.id);
               return initialToken ? { ...initialToken, spent: savedToken.spent } : savedToken;
@@ -55,15 +47,7 @@ const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Mod
           };
           finalCategories.push(mergedCategory);
         } else {
-          // This is a custom category added by the user
           finalCategories.push(savedCategory);
-        }
-      }
-      
-      // Then, add any initial categories that weren't in the saved state (unlikely but safe)
-      for (const initialCategory of initialModule.categories) {
-        if (!savedCategoryMap.has(initialCategory.id)) {
-          finalCategories.push(initialCategory);
         }
       }
       
@@ -71,7 +55,6 @@ const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Mod
     }
   }
 
-  // 2. Add any entirely new modules that were saved
   for (const savedModule of savedModules) {
     if (!mergedModuleMap.has(savedModule.id)) {
       mergedModules.push(savedModule);
@@ -225,9 +208,15 @@ export const useBudgetState = () => {
       ...module,
       categories: module.categories.map(category => {
         let newBaseValue = category.baseValue;
-        if (category.mode === 'percentage') {
+        
+        if (category.frequency === 'monthly') {
+          newBaseValue = (category.totalMonthlyAmount || 0) / 4;
+        } else if (category.mode === 'percentage') {
           newBaseValue = Math.round((weeklyIncome * (category.percentage || 0) / 100) * 100) / 100;
         }
+        
+        // Round to nearest 5 for tokenization
+        newBaseValue = Math.round(newBaseValue / 5) * 5;
         
         const spentAmount = category.tokens.filter(t => t.spent).reduce((sum, t) => sum + t.value, 0);
         const freshTokens = generateTokens(category.id, newBaseValue, category.tokenValue || 10);

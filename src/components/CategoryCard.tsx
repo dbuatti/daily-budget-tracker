@@ -6,6 +6,8 @@ import { formatCurrency } from '@/lib/format';
 import AddTokenDialog from './AddTokenDialog';
 import { useBudgetState } from '@/hooks/useBudgetState';
 import { FUEL_CATEGORY_ID } from '@/data/budgetData';
+import { Calendar } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface CategoryCardProps {
   category: Category;
@@ -15,11 +17,8 @@ interface CategoryCardProps {
 const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) => {
   const { handleCustomSpend } = useBudgetState();
   
-  // 1. The initial budget is now stored directly in baseValue
-  // If baseValue is missing (old data), calculate it from tokens as fallback
   const initialWeeklyBudget = category.baseValue || category.tokens.reduce((sum, token) => sum + token.value, 0);
 
-  // 2. Calculate the total amount spent in this category (predefined tokens + custom spends)
   const totalSpentInThisCategory = category.tokens
     .filter(t => t.spent)
     .reduce((sum, token) => sum + token.value, 0);
@@ -29,8 +28,7 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) =
   let statusLabel = "Initial Budget";
 
   if (category.id === FUEL_CATEGORY_ID) {
-    // Special 4-week tracking logic for Fuel
-    displayBudget = initialWeeklyBudget * 4; // 4 weeks * $50 = $200
+    displayBudget = initialWeeklyBudget * 4;
     currentStatus = displayBudget - totalSpentInThisCategory;
     statusLabel = "4-Week Budget";
   }
@@ -39,7 +37,19 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) =
     <Card className="rounded-2xl shadow-xl border-2 border-indigo-200 dark:border-indigo-800/70 transition-all hover:shadow-2xl bg-white dark:bg-gray-900/50">
       <CardHeader className="pb-3 border-b border-indigo-100 dark:border-indigo-900/50">
         <CardTitle className="text-xl font-bold text-indigo-800 dark:text-indigo-300 flex justify-between items-center mb-1">
-          <span>{category.name}</span>
+          <div className="flex items-center">
+            <span>{category.name}</span>
+            {category.frequency === 'monthly' && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Calendar className="w-4 h-4 ml-2 text-indigo-500 cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>4-Week Spread: {formatCurrency(category.totalMonthlyAmount || 0)} / month</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
           <span className={
             `text-lg font-extrabold ${currentStatus < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`
           }>
