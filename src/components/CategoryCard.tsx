@@ -6,6 +6,7 @@ import { formatCurrency } from '@/lib/format';
 import AddTokenDialog from './AddTokenDialog';
 import { useBudgetState } from '@/hooks/useBudgetState';
 import { FUEL_CATEGORY_ID } from '@/data/budgetData';
+import { cn } from '@/lib/utils';
 
 interface CategoryCardProps {
   category: Category;
@@ -18,13 +19,13 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) =
   // The "Initial Budget" is the static baseValue from settings
   const initialWeeklyBudget = category.baseValue || 0;
 
-  // Calculate total spent in this category from the tokens (which are now derived from transactions)
+  // Calculate total spent in this category from the tokens (which are derived from transactions)
   const totalSpentInThisCategory = category.tokens
     .filter(t => t.spent)
     .reduce((sum, token) => sum + token.value, 0);
 
   let displayInitialBudget = initialWeeklyBudget;
-  let statusLabel = "Initial Budget";
+  let statusLabel = "Weekly Budget";
 
   // Special handling for Fuel (4-week cycle)
   if (category.id === FUEL_CATEGORY_ID) {
@@ -32,31 +33,53 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) =
     statusLabel = "4-Week Budget";
   }
 
-  const currentStatus = displayInitialBudget - totalSpentInThisCategory;
-  const isOverspent = currentStatus < 0;
+  const remainingBalance = displayInitialBudget - totalSpentInThisCategory;
+  const isOverspent = remainingBalance < 0;
 
   return (
-    <Card className="rounded-2xl shadow-xl border-2 border-indigo-200 dark:border-indigo-800/70 bg-white dark:bg-gray-900/50">
+    <Card className={cn(
+      "rounded-2xl shadow-xl border-2 transition-all duration-300",
+      isOverspent 
+        ? "border-red-300 dark:border-red-900/50 bg-red-50/30 dark:bg-red-900/10" 
+        : "border-indigo-200 dark:border-indigo-800/70 bg-white dark:bg-gray-900/50"
+    )}>
       <CardHeader className="pb-3 border-b border-indigo-100 dark:border-indigo-900/50">
         <CardTitle className="text-xl font-bold text-indigo-800 dark:text-indigo-300 flex justify-between items-center mb-1">
           <span>{category.name}</span>
-          <span className={`text-lg font-extrabold ${isOverspent ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-            {formatCurrency(currentStatus).replace('A$', '$')}
-          </span>
+          <div className="text-right">
+            <span className={cn(
+              "text-2xl font-black block",
+              isOverspent ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+            )}>
+              {formatCurrency(remainingBalance).replace('A$', '$')}
+            </span>
+            <span className="text-[10px] uppercase tracking-tighter text-gray-400 font-bold">
+              Remaining
+            </span>
+          </div>
         </CardTitle>
-        <p className="text-xs text-gray-500">
-          {statusLabel}: <span className="font-semibold">{formatCurrency(displayInitialBudget).replace('A$', '$')}</span>
-        </p>
+        <div className="flex justify-between items-center mt-2">
+          <p className="text-xs text-gray-500">
+            {statusLabel}: <span className="font-semibold">{formatCurrency(displayInitialBudget).replace('A$', '$')}</span>
+          </p>
+          <p className="text-xs text-gray-500">
+            Spent: <span className="font-semibold">{formatCurrency(totalSpentInThisCategory).replace('A$', '$')}</span>
+          </p>
+        </div>
       </CardHeader>
       <CardContent className="flex flex-wrap gap-4 p-4">
-        {category.tokens.map((token) => (
-          <TokenButton
-            key={token.id}
-            value={token.value}
-            spent={token.spent}
-            onClick={() => onTokenSpend(category.id, token.id)}
-          />
-        ))}
+        {category.tokens.length > 0 ? (
+          category.tokens.map((token) => (
+            <TokenButton
+              key={token.id}
+              value={token.value}
+              spent={token.spent}
+              onClick={() => onTokenSpend(category.id, token.id)}
+            />
+          ))
+        ) : (
+          <p className="text-sm text-gray-400 italic">No tokens available.</p>
+        )}
       </CardContent>
       <div className="p-4 pt-0 border-t border-indigo-100 dark:border-indigo-900/50">
         <AddTokenDialog 

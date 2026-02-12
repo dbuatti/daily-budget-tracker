@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2, AlertTriangle, History } from 'lucide-react';
 import BudgetRemainingBar from './BudgetRemainingBar';
-import { WEEKLY_BUDGET_TOTAL } from '@/data/budgetData';
 import { useNavigate } from 'react-router-dom';
 
 const WeeklyDashboard: React.FC = () => {
@@ -24,6 +23,11 @@ const WeeklyDashboard: React.FC = () => {
     handleMondayReset,
     saveStrategy
   } = useBudgetState();
+
+  // Calculate the actual total budget from the current modules
+  const totalBudget = modules.reduce((acc, module) => {
+    return acc + module.categories.reduce((catAcc, cat) => catAcc + (cat.baseValue || 0), 0);
+  }, 0);
 
   if (isLoading) {
     return (
@@ -85,10 +89,11 @@ const WeeklyDashboard: React.FC = () => {
       <DashboardHeader 
         totalSpent={totalSpent} 
         gearTravelFund={gearTravelFund} 
+        modules={modules}
       />
 
       <div className="mt-4 rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
-        <BudgetRemainingBar spent={totalSpent} total={WEEKLY_BUDGET_TOTAL} className="border border-gray-200 dark:border-gray-700" />
+        <BudgetRemainingBar spent={totalSpent} total={totalBudget} className="border border-gray-200 dark:border-gray-700" />
       </div>
 
       <div className="flex justify-end items-center space-x-4 mb-6 mt-6">

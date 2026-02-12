@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useEffect } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useSession } from '@/contexts/SessionContext';
@@ -8,6 +8,7 @@ import { Module, Category, Token } from '@/types/budget';
 import { WeeklyBudgetState, BudgetTransaction } from '@/types/supabase';
 import { formatCurrency } from '@/lib/format';
 import { toast } from 'sonner';
+import { startOfWeek, format } from 'date-fns';
 import { 
   GENERIC_CATEGORY_ID,
   initialModules, 
@@ -35,7 +36,13 @@ export const useBudgetState = () => {
   const queryClient = useQueryClient();
   const userId = user?.id;
 
-  // 1. Fetch the Budget Configuration (The "Architect" state)
+  // Helper to get the start of the current budget week (Monday)
+  const getStartOfBudgetWeek = useCallback(() => {
+    // weekStartsOn: 1 is Monday
+    return format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+  }, []);
+
+  // 1. Fetch the Budget Configuration
   const { data: budgetState, isLoading: isStateLoading, isError } = useQuery({
     queryKey: ['budgetState', userId],
     queryFn: async () => {
@@ -48,12 +55,13 @@ export const useBudgetState = () => {
       if (error && error.code !== 'PGRST116') throw error;
       
       if (!data) {
+        const defaultResetDate = getStartOfBudgetWeek();
         return { 
           user_id: userId!, 
           current_tokens: initialModules, 
           gear_travel_fund: 0, 
           annual_income: DEFAULT_ANNUAL_INCOME,
-          last_reset_date: new Date().toISOString().split('T')[0],
+          last_reset_date: defaultResetDate,
           updated_at: new Date().toISOString()
         } as WeeklyBudgetState;
       }
@@ -69,8 +77,6 @@ export const useBudgetState = () => {
     queryFn: async () => {
       if (!budgetState?.last_reset_date) return [];
       
-      // We fetch all transactions from the start of the reset day in UTC to be safe,
-      // then we'll filter or rely on the database's timestamp.
       const { data, error } = await supabase
         .from('budget_transactions')
         .select('*')
@@ -88,7 +94,6 @@ export const useBudgetState = () => {
   const modules = useMemo(() => {
     if (!budgetState) return [];
 
-    // Use the saved structure as the base
     const baseModules: Module[] = JSON.parse(JSON.stringify(budgetState.current_tokens));
 
     return baseModules.map(module => ({
@@ -104,11 +109,10 @@ export const useBudgetState = () => {
         // Mark tokens as spent based on the total spent amount
         let remainingSpentPool = totalSpentAmount;
         const updatedTokens = freshTokens.map(token => {
-          if (remainingSpentPool >= token.value - 0.001) { // Small epsilon for float precision
+          if (remainingSpentPool >= token.value - 0.001) {
             remainingSpentPool -= token.value;
             return { ...token, spent: true };
           } else if (remainingSpentPool > 0) {
-            // If there's a partial spend, we mark the token as spent but don't subtract more than its value
             remainingSpentPool = 0;
             return { ...token, spent: true };
           }
@@ -135,7 +139,7 @@ export const useBudgetState = () => {
   // 4. Calculate Totals
   const totalSpentWeekly = useMemo(() => {
     return transactions
-      .filter(t => t.category_id !== FUEL_CATEGORY_ID) // Exclude fuel from weekly total if it's 4-weekly
+      .filter(t => t.category_id !== FUEL_CATEGORY_ID)
       .reduce((sum, t) => sum + Number(t.amount), 0);
   }, [transactions]);
 
@@ -167,12 +171,10 @@ export const useBudgetState = () => {
     
     if (!token || token.spent) return;
 
-    // Log the transaction
     const { error } = await supabase.from('budget_transactions').insert({
       user_id: userId!,
       amount: token.value,
       category_id: catId,
-      category_name: category?.name,
       transaction_type: 'token_spend'
     });
 
@@ -181,8 +183,12 @@ export const useBudgetState = () => {
       return;
     }
 
-    // Invalidate to trigger re-calculation from transactions
-    queryClient.invalidateQueries({ queryKey: ['budgetTransactions', userId] });
+    // Invalidate all related queries to ensure UI updates immediately
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['budgetTransactions', userId] }),
+      queryClient.invalidateQueries({ queryKey: ['spentToday', userId] })
+    ]);
+    
     toast.success(`Spent ${formatCurrency(token.value)} in ${category?.name}`);
   }, [modules, userId, queryClient]);
 
@@ -193,7 +199,6 @@ export const useBudgetState = () => {
       user_id: userId!,
       amount,
       category_id: categoryId,
-      category_name: category?.name || 'Unknown',
       transaction_type: 'custom_spend'
     });
 
@@ -202,7 +207,11 @@ export const useBudgetState = () => {
       return;
     }
 
-    queryClient.invalidateQueries({ queryKey: ['budgetTransactions', userId] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['budgetTransactions', userId] }),
+      queryClient.invalidateQueries({ queryKey: ['spentToday', userId] })
+    ]);
+    
     toast.success(`Logged ${formatCurrency(amount)} custom spend`);
   }, [modules, userId, queryClient]);
 
@@ -214,10 +223,10 @@ export const useBudgetState = () => {
     await saveMutation.mutateAsync({ 
       current_tokens: initialModules,
       gear_travel_fund: 0,
-      last_reset_date: new Date().toISOString().split('T')[0]
+      last_reset_date: getStartOfBudgetWeek()
     });
     toast.success("Budget fully reset.");
-  }, [saveMutation]);
+  }, [saveMutation, getStartOfBudgetWeek]);
 
   const handleFundAdjustment = useCallback(async (amount: number) => {
     await saveMutation.mutateAsync({ gear_travel_fund: amount });

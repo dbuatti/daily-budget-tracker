@@ -4,7 +4,7 @@ import ModuleSection from '@/components/ModuleSection';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
 import MondayBriefingDialog from '@/components/MondayBriefingDialog';
 import { Loader2, Bug, RefreshCw, Terminal } from 'lucide-react';
-import { GENERIC_MODULE_ID, TOTAL_TOKEN_BUDGET } from '@/data/budgetData';
+import { GENERIC_MODULE_ID } from '@/data/budgetData';
 import { formatCurrency } from '@/lib/format';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -167,9 +167,13 @@ const LogTransaction = () => {
 
   const visibleModules = modules.filter(module => module.id !== GENERIC_MODULE_ID);
   
-  const weeklyTokenBudget = TOTAL_TOKEN_BUDGET;
-  const weeklyProgress = Math.min(100, (totalSpentWeekly / weeklyTokenBudget) * 100);
-  const weeklyRemaining = weeklyTokenBudget - totalSpentWeekly;
+  // Calculate the actual total budget from the current modules
+  const totalBudget = modules.reduce((acc, module) => {
+    return acc + module.categories.reduce((catAcc, cat) => catAcc + (cat.baseValue || 0), 0);
+  }, 0);
+
+  const weeklyProgress = totalBudget > 0 ? Math.min(100, (totalSpentWeekly / totalBudget) * 100) : 0;
+  const weeklyRemaining = totalBudget - totalSpentWeekly;
 
 
   return (
@@ -206,7 +210,7 @@ const LogTransaction = () => {
               {formatCurrency(totalSpentWeekly).replace('A$', '$')}
             </p>
             <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-2">
-              out of {formatCurrency(weeklyTokenBudget).replace('A$', '$')} token budget
+              out of {formatCurrency(totalBudget).replace('A$', '$')} token budget
             </p>
           </div>
 
