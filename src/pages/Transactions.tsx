@@ -6,7 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useSession } from '@/contexts/SessionContext';
 import { useBudgetState } from '@/hooks/useBudgetState';
 import { formatCurrency } from '@/lib/format';
-import { format } from 'date-fns';
+import { format, isToday, isYesterday, startOfDay } from 'date-fns';
 import { 
   ArrowLeft, 
   History, 
@@ -20,7 +20,7 @@ import {
   DollarSign
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { useNavigate } from 'react-router-dom';
 import { initialModules } from '@/data/budgetData';
 import { Module } from '@/types/budget';
@@ -41,25 +41,16 @@ const getCategoryIcon = (categoryId: string | null) => {
 };
 
 const getCategoryName = (tx: any, currentModules: Module[]) => {
-  // 1. Prioritize the saved category_name from the transaction record (if column exists)
   if (tx.category_name) return tx.category_name;
-  
-  // 2. Fallback to generic spend if no ID
   if (!tx.category_id) return 'Generic Spend';
-
-  // 3. Look up in CURRENT live modules (handles "Beauty" and other custom categories)
   for (const module of currentModules) {
     const category = module.categories.find(c => c.id === tx.category_id);
     if (category) return category.name;
   }
-  
-  // 4. Fallback to searching initialModules (for legacy/default categories)
   for (const module of initialModules) {
     const category = module.categories.find(c => c.id === tx.category_id);
     if (category) return category.name;
   }
-  
-  // 5. Final fallback
   return 'Custom Category';
 };
 
@@ -75,13 +66,37 @@ const Transactions = () => {
         .from('budget_transactions')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(100);
       
       if (error) throw error;
       return data;
     },
     enabled: !!user,
   });
+
+  const groupedTransactions = useMemo(() => {
+    if (!transactions) return [];
+    
+    const groups: { [key: string]: any[] } = {};
+    
+    transactions.forEach(tx => {
+      const date = startOfDay(new Date(tx.created_at)).toISOString();
+      if (!groups[date]) groups[date] = [];
+      groups[date].push(tx);
+    });
+    
+    return Object.keys(groups).sort((a, b) => b.localeCompare(a)).map(date => ({
+      date,
+      items: groups[date]
+    }));
+  }, [transactions]);
+
+  const getDateLabel = (dateStr: string) => {
+    const date = new Date(dateStr);
+    if (isToday(date)) return 'Today';
+    if (isYesterday(date)) return 'Yesterday';
+    return format(date, 'EEEE, MMMM do');
+  };
 
   if (isTxLoading || isBudgetLoading) {
     return (
@@ -105,7 +120,7 @@ const Transactions = () => {
           </Button>
           <h1 className="text-3xl font-extrabold text-indigo-900 dark:text-indigo-200 flex items-center gap-3">
             <History className="w-8 h-8" />
-            Transaction History
+            History
           </h1>
         </div>
       </div>
@@ -129,36 +144,45 @@ const Transactions = () => {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {transactions.map((tx) => (
-            <Card key={tx.id} className="rounded-2xl shadow-md border border-indigo-100 dark:border-indigo-900/50 hover:shadow-lg transition-shadow overflow-hidden">
-              <CardContent className="p-0">
-                <div className="flex items-center p-4">
-                  <div className="h-12 w-12 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 mr-4 shrink-0">
-                    {getCategoryIcon(tx.category_id)}
-                  </div>
-                  <div className="flex-grow min-w-0">
-                    <h3 className="font-bold text-gray-900 dark:text-gray-100 truncate">
-                      {getCategoryName(tx, currentModules)}
-                    </h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {format(new Date(tx.created_at), 'MMM d, yyyy • h:mm a')}
-                    </p>
-                  </div>
-                  <div className="text-right ml-4">
-                    <p className="text-lg font-black text-indigo-700 dark:text-indigo-300">
-                      {formatCurrency(tx.amount).replace('A$', '$')}
-                    </p>
-                    <p className="text-[10px] uppercase tracking-widest font-bold text-gray-400">
-                      {tx.transaction_type.replace('_', ' ')}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+        <div className="space-y-8">
+          {groupedTransactions.map((group) => (
+            <div key={group.date} className="space-y-3">
+              <h2 className="text-sm font-bold text-gray-500 uppercase tracking-widest px-2">
+                {getDateLabel(group.date)}
+              </h2>
+              <div className="space-y-3">
+                {group.items.map((tx) => (
+                  <Card key={tx.id} className="rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-900/50 hover:shadow-md transition-shadow overflow-hidden">
+                    <CardContent className="p-0">
+                      <div className="flex items-center p-4">
+                        <div className="h-12 w-12 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 mr-4 shrink-0">
+                          {getCategoryIcon(tx.category_id)}
+                        </div>
+                        <div className="flex-grow min-w-0">
+                          <h3 className="font-bold text-gray-900 dark:text-gray-100 truncate">
+                            {getCategoryName(tx, currentModules)}
+                          </h3>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {format(new Date(tx.created_at), 'h:mm a')}
+                          </p>
+                        </div>
+                        <div className="text-right ml-4">
+                          <p className="text-lg font-black text-indigo-700 dark:text-indigo-300">
+                            {formatCurrency(tx.amount).replace('A$', '$')}
+                          </p>
+                          <p className="text-[10px] uppercase tracking-widest font-bold text-gray-400">
+                            {tx.transaction_type.replace('_', ' ')}
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
           ))}
           <p className="text-center text-xs text-gray-400 py-8">
-            Showing last 50 transactions
+            Showing last 100 transactions
           </p>
         </div>
       )}

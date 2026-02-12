@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { MadeWithDyad } from '@/components/made-with-dyad';
 import LogoutButton from './LogoutButton';
+import { ThemeToggle } from './ThemeToggle';
 
 interface NavItemProps {
   to: string;
@@ -37,11 +38,14 @@ const DesktopSidebar: React.FC = () => {
     <div className="hidden md:flex flex-col w-64 h-screen bg-sidebar border-r border-sidebar-border p-4 shadow-2xl sticky top-0">
       
       {/* Logo/Title Area */}
-      <div className="flex items-center mb-8 px-2">
-        <Zap className="h-8 w-8 text-indigo-600 dark:text-indigo-400 mr-2" />
-        <h1 className="text-xl font-extrabold text-foreground">
-          Permissions
-        </h1>
+      <div className="flex items-center justify-between mb-8 px-2">
+        <div className="flex items-center">
+          <Zap className="h-8 w-8 text-indigo-600 dark:text-indigo-400 mr-2" />
+          <h1 className="text-xl font-extrabold text-foreground">
+            Permissions
+          </h1>
+        </div>
+        <ThemeToggle />
       </div>
 
       {/* Navigation */}

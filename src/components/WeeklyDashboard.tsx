@@ -9,6 +9,17 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2, AlertTriangle, History } from 'lucide-react';
 import BudgetRemainingBar from './BudgetRemainingBar';
 import { useNavigate } from 'react-router-dom';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const WeeklyDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -24,7 +35,6 @@ const WeeklyDashboard: React.FC = () => {
     saveStrategy
   } = useBudgetState();
 
-  // Calculate the actual total budget from the current modules
   const totalBudget = modules.reduce((acc, module) => {
     return acc + module.categories.reduce((catAcc, cat) => catAcc + (cat.baseValue || 0), 0);
   }, 0);
@@ -98,13 +108,34 @@ const WeeklyDashboard: React.FC = () => {
 
       <div className="flex justify-end items-center space-x-4 mb-6 mt-6">
         <DebugActions />
-        <Button 
-          onClick={handleMondayReset} 
-          className="bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg transition-transform active:scale-[0.98] font-semibold"
-        >
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Simulate Monday Reset
-        </Button>
+        
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button 
+              className="bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg transition-transform active:scale-[0.98] font-semibold"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Simulate Monday Reset
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent className="rounded-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Simulate Monday Reset?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will reset your weekly spending progress and start a fresh week. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={handleMondayReset}
+                className="bg-green-600 hover:bg-green-700 text-white rounded-xl"
+              >
+                Reset Week
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       <div className="space-y-8">

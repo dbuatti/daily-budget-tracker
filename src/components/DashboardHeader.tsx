@@ -4,7 +4,7 @@ import React from 'react';
 import { formatCurrency } from '@/lib/format';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import StyledProgress from '@/components/StyledProgress';
-import { DollarSign, TrendingUp, Wallet, Calendar } from 'lucide-react';
+import { DollarSign, TrendingUp, Wallet, Calendar, Coffee } from 'lucide-react';
 import { Module } from '@/types/budget';
 import { differenceInDays, nextMonday, startOfDay } from 'date-fns';
 
@@ -28,7 +28,8 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ totalSpent, gearTrave
   const savingsGoal = 500; 
   const savingsProgress = Math.min(100, (gearTravelFund / savingsGoal) * 100);
 
-  const daysUntilReset = differenceInDays(nextMonday(new Date()), startOfDay(new Date()));
+  const daysUntilReset = Math.max(1, differenceInDays(nextMonday(new Date()), startOfDay(new Date())));
+  const dailyAllowance = Math.max(0, remainingBudget / daysUntilReset);
 
   const getStatusText = () => {
     if (deficit > 0) {
@@ -38,7 +39,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ totalSpent, gearTrave
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
       
       <Card className="rounded-2xl shadow-2xl border-4 border-indigo-300 dark:border-indigo-700 bg-indigo-100/70 dark:bg-indigo-900/70 transition-transform hover:scale-[1.01]">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -55,6 +56,23 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ totalSpent, gearTrave
             <Calendar className="w-3.5 h-3.5" />
             {daysUntilReset} days until reset
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl shadow-2xl border-4 border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 transition-transform hover:scale-[1.01]">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+            Daily Allowance
+          </CardTitle>
+          <Coffee className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-4xl font-extrabold text-emerald-900 dark:text-white">
+            {formatCurrency(dailyAllowance).replace('A$', '$')}
+          </div>
+          <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-bold">
+            Safe to spend per day
+          </p>
         </CardContent>
       </Card>
 
