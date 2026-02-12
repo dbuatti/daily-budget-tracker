@@ -3,7 +3,7 @@ import { useBudgetState } from '@/hooks/useBudgetState';
 import ModuleSection from '@/components/ModuleSection';
 import QuickSpendButtons from '@/components/QuickSpendButtons';
 import MondayBriefingDialog from '@/components/MondayBriefingDialog';
-import { Loader2, Bug, RefreshCw, Terminal } from 'lucide-react';
+import { Loader2, Bug, RefreshCw, Terminal, AlertCircle } from 'lucide-react';
 import { GENERIC_MODULE_ID } from '@/data/budgetData';
 import { formatCurrency } from '@/lib/format';
 import { supabase } from '@/integrations/supabase/client';
@@ -46,7 +46,7 @@ const LogTransaction = () => {
         .from('budget_transactions')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(20);
+        .limit(50);
       
       if (error) {
         addLog(`Error fetching raw transactions: ${error.message}`);
@@ -74,6 +74,18 @@ const LogTransaction = () => {
       }
 
       addLog(`User ID: ${user.id}`);
+
+      const { data: budgetState, error: stateError } = await supabase
+        .from('weekly_budget_state')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (stateError) {
+        addLog(`Error fetching budget state: ${stateError.message}`);
+      } else {
+        addLog(`Budget State: last_reset_date=${budgetState.last_reset_date}`);
+      }
 
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
@@ -110,18 +122,18 @@ const LogTransaction = () => {
         addLog(`get_daily_spent_amount returned: ${rpcResult}`);
       }
 
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const { data: last24hTx } = await supabase
+      const resetDate = budgetState?.last_reset_date || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: weeklyTx } = await supabase
         .from('budget_transactions')
         .select('*')
         .eq('user_id', user.id)
-        .gte('created_at', twentyFourHoursAgo.toISOString())
+        .gte('created_at', resetDate)
         .order('created_at', { ascending: false });
 
-      addLog(`Transactions in last 24h: ${last24hTx?.length || 0}`);
+      addLog(`Transactions since reset (${resetDate}): ${weeklyTx?.length || 0}`);
 
-      if (last24hTx) {
-        for (const tx of last24hTx) {
+      if (weeklyTx) {
+        for (const tx of weeklyTx) {
           const txDate = new Date(tx.created_at);
           const txDateInUserTZ = new Intl.DateTimeFormat('en-US', {
             timeZone: timezone,
@@ -133,7 +145,7 @@ const LogTransaction = () => {
             second: '2-digit',
             hour12: false
           }).format(txDate);
-          addLog(`Tx ${tx.id.slice(0,8)}: ${formatCurrency(tx.amount)} at ${txDateInUserTZ} (${tx.transaction_type})`);
+          addLog(`Tx ${tx.id.slice(0,8)}: ${tx.category_id} | ${formatCurrency(tx.amount)} at ${txDateInUserTZ}`);
         }
       }
 
@@ -280,26 +292,23 @@ const LogTransaction = () => {
             </div>
           </CardTitle>
           <p className="text-xs text-orange-600 dark:text-orange-400">
-            Debugging why daily spend shows 0
+            Debugging why spend might not be showing correctly
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="p-3 bg-orange-100 dark:bg-orange-900/50 rounded-lg border border-orange-200 dark:border-orange-800">
-            <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">User Profile</h4>
+            <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">User Profile & State</h4>
             <div className="text-xs space-y-1 text-orange-900 dark:text-orange-200">
               <p><strong>Timezone:</strong> {profile?.timezone || 'Loading...'}</p>
               <p><strong>Day Rollover Hour:</strong> {profile?.day_rollover_hour || 0}</p>
-              <p><strong>Client Timezone:</strong> {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+              <p><strong>Weekly Reset Date:</strong> {logs.find(l => l.includes('Budget State: last_reset_date='))?.split('=')[1] || 'Unknown'}</p>
             </div>
           </div>
 
           {debugInfo && (
             <div className="p-3 bg-orange-100 dark:bg-orange-900/50 rounded-lg border border-orange-200 dark:border-orange-800">
-              <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">Debug RPC Result</h4>
+              <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm mb-2">Daily Spend RPC Result</h4>
               <div className="text-xs space-y-1 text-orange-900 dark:text-orange-200">
-                <p><strong>Timezone:</strong> {debugInfo.debug_info?.user_timezone}</p>
-                <p><strong>Rollover Hour:</strong> {debugInfo.debug_info?.day_rollover_hour}</p>
-                <p><strong>Current Time in TZ:</strong> {debugInfo.debug_info?.current_time_in_user_tz?.toString()}</p>
                 <p><strong>Target Date:</strong> {debugInfo.debug_info?.target_date}</p>
                 <p><strong>Boundaries:</strong></p>
                 <p className="ml-2">Start: {new Date(debugInfo.boundaries?.start_time).toLocaleString()}</p>
@@ -313,7 +322,7 @@ const LogTransaction = () => {
           <div className="overflow-hidden rounded-lg border border-orange-200 dark:border-orange-800">
             <div className="bg-orange-100 dark:bg-orange-900/50 p-2">
               <h4 className="font-semibold text-orange-800 dark:text-orange-300 text-sm">
-                Recent Transactions (All - Last 20)
+                Recent Transactions (Last 50)
               </h4>
             </div>
             <div className="max-h-64 overflow-y-auto">
@@ -324,31 +333,30 @@ const LogTransaction = () => {
                   <thead className="bg-orange-50 dark:bg-orange-900/30 sticky top-0">
                     <tr>
                       <th className="text-left p-2 font-semibold text-orange-800 dark:text-orange-300">Amount</th>
-                      <th className="text-left p-2 font-semibold text-orange-800 dark:text-orange-300">Type</th>
-                      <th className="text-left p-2 font-semibold text-orange-800 dark:text-orange-300">Category</th>
+                      <th className="text-left p-2 font-semibold text-orange-800 dark:text-orange-300">Category ID</th>
                       <th className="text-left p-2 font-semibold text-orange-800 dark:text-orange-300">Created (UTC)</th>
-                      <th className="text-left p-2 font-semibold text-orange-800 dark:text-orange-300">In Range?</th>
+                      <th className="text-left p-2 font-semibold text-orange-800 dark:text-orange-300">Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rawTransactions.map((tx) => {
                       const txDate = new Date(tx.created_at);
-                      const inRange = debugInfo?.boundaries && 
-                        txDate >= new Date(debugInfo.boundaries.start_time) && 
-                        txDate < new Date(debugInfo.boundaries.end_time);
+                      const resetDateStr = logs.find(l => l.includes('Budget State: last_reset_date='))?.split('=')[1];
+                      const resetDate = resetDateStr ? new Date(resetDateStr) : null;
+                      const isThisWeek = resetDate ? txDate >= resetDate : false;
+                      
                       return (
                         <tr key={tx.id} className="border-t border-orange-100 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-orange-900/20">
                           <td className="p-2 font-bold text-orange-900 dark:text-orange-100">{formatCurrency(tx.amount)}</td>
-                          <td className="p-2 text-orange-800 dark:text-orange-200">{tx.transaction_type}</td>
-                          <td className="p-2 text-orange-800 dark:text-orange-200">{tx.category_id || '—'}</td>
+                          <td className="p-2 text-orange-800 dark:text-orange-200 font-mono">{tx.category_id || 'GENERIC'}</td>
                           <td className="p-2 font-mono text-orange-700 dark:text-orange-300">
-                            {txDate.toLocaleString()} UTC
+                            {txDate.toLocaleString()}
                           </td>
                           <td className="p-2">
-                            {inRange ? (
-                              <span className="text-green-600 dark:text-green-400 font-semibold">✓ YES</span>
+                            {isThisWeek ? (
+                              <span className="text-green-600 dark:text-green-400 font-semibold">CURRENT WEEK</span>
                             ) : (
-                              <span className="text-red-600 dark:text-red-400">✗ NO</span>
+                              <span className="text-gray-400">PAST WEEK</span>
                             )}
                           </td>
                         </tr>
