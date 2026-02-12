@@ -17,26 +17,20 @@ interface CategoryCardProps {
 const CategoryCard: React.FC<CategoryCardProps> = ({ category, onTokenSpend }) => {
   const { handleCustomSpend } = useBudgetState();
   
-  // Calculate the total value of all tokens currently in the category
-  const totalTokenValue = category.tokens.reduce((sum, token) => sum + token.value, 0);
+  // The base budget for the week
+  const baseBudget = category.baseValue || 0;
   
-  // Use the higher of baseValue or totalTokenValue as the initial budget for display
-  const initialWeeklyBudget = Math.max(category.baseValue || 0, totalTokenValue);
+  // Special handling for Fuel (4-week budget)
+  const displayBudget = category.id === FUEL_CATEGORY_ID ? baseBudget * 4 : baseBudget;
 
-  const totalSpentInThisCategory = category.tokens
+  // Calculate total spent from all tokens (base + custom)
+  const totalSpent = category.tokens
     .filter(t => t.spent)
     .reduce((sum, token) => sum + token.value, 0);
 
-  let displayBudget = initialWeeklyBudget;
-  let currentStatus = initialWeeklyBudget - totalSpentInThisCategory;
-  let statusLabel = "Initial Budget";
-
-  // Special handling for Fuel (4-week budget)
-  if (category.id === FUEL_CATEGORY_ID) {
-    displayBudget = initialWeeklyBudget * 4;
-    currentStatus = displayBudget - totalSpentInThisCategory;
-    statusLabel = "4-Week Budget";
-  }
+  // The true remaining balance
+  const currentStatus = displayBudget - totalSpent;
+  const statusLabel = category.id === FUEL_CATEGORY_ID ? "4-Week Budget" : "Initial Budget";
 
   return (
     <Card className="rounded-2xl shadow-xl border-2 border-indigo-200 dark:border-indigo-800/70 transition-all hover:shadow-2xl bg-white dark:bg-gray-900/50">
