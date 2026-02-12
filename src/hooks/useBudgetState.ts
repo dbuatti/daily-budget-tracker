@@ -24,44 +24,60 @@ const generateTokens = (baseId: string, totalValue: number, preferredDenom: numb
 };
 
 const mergeBudgetState = (savedModules: Module[], initialModules: Module[]): Module[] => {
+  // Start with a deep copy of initial modules
   const mergedModules: Module[] = JSON.parse(JSON.stringify(initialModules));
   const savedModuleMap = new Map(savedModules.map(m => [m.id, m]));
   const mergedModuleMap = new Map(mergedModules.map(m => [m.id, m]));
 
+  // 1. Update existing modules and their categories
   for (const initialModule of mergedModules) {
     const savedModule = savedModuleMap.get(initialModule.id);
     if (savedModule) {
+      const initialCategoryMap = new Map(initialModule.categories.map(c => [c.id, c]));
       const savedCategoryMap = new Map(savedModule.categories.map(c => [c.id, c]));
-      initialModule.categories = initialModule.categories.map(initialCategory => {
-        const savedCategory = savedCategoryMap.get(initialCategory.id);
-        if (savedCategory) {
-          initialCategory.baseValue = savedCategory.baseValue;
-          initialCategory.percentage = savedCategory.percentage;
-          initialCategory.mode = savedCategory.mode;
-          initialCategory.iconName = savedCategory.iconName;
-          
-          const baseTokens = JSON.parse(JSON.stringify(initialCategory.tokens));
-          const savedTokenMap = new Map(savedCategory.tokens.map(t => [t.id, t]));
-          const finalTokens = baseTokens.map(baseToken => {
-              const savedToken = savedTokenMap.get(baseToken.id);
-              return savedToken ? { ...baseToken, spent: savedToken.spent } : baseToken;
-          });
-          for (const savedToken of savedCategory.tokens) {
-              if (!baseTokens.some(t => t.id === savedToken.id)) {
-                  finalTokens.push(savedToken);
-              }
-          }
-          initialCategory.tokens = finalTokens;
+      
+      // Update existing categories and add new ones from saved state
+      const finalCategories: Category[] = [];
+      
+      // First, process all categories that exist in the saved state
+      for (const savedCategory of savedModule.categories) {
+        const initialCategory = initialCategoryMap.get(savedCategory.id);
+        if (initialCategory) {
+          // Merge saved state into initial category structure
+          const mergedCategory = {
+            ...initialCategory,
+            ...savedCategory,
+            // Ensure tokens are merged correctly to preserve spent status
+            tokens: savedCategory.tokens.map(savedToken => {
+              const initialToken = initialCategory.tokens.find(t => t.id === savedToken.id);
+              return initialToken ? { ...initialToken, spent: savedToken.spent } : savedToken;
+            })
+          };
+          finalCategories.push(mergedCategory);
+        } else {
+          // This is a custom category added by the user
+          finalCategories.push(savedCategory);
         }
-        return initialCategory;
-      });
+      }
+      
+      // Then, add any initial categories that weren't in the saved state (unlikely but safe)
+      for (const initialCategory of initialModule.categories) {
+        if (!savedCategoryMap.has(initialCategory.id)) {
+          finalCategories.push(initialCategory);
+        }
+      }
+      
+      initialModule.categories = finalCategories;
     }
   }
+
+  // 2. Add any entirely new modules that were saved
   for (const savedModule of savedModules) {
-      if (!mergedModuleMap.has(savedModule.id)) {
-          mergedModules.push(savedModule);
-      }
+    if (!mergedModuleMap.has(savedModule.id)) {
+      mergedModules.push(savedModule);
+    }
   }
+
   return mergedModules;
 };
 
@@ -203,7 +219,6 @@ export const useBudgetState = () => {
   }, [userId, queryClient]);
 
   const saveStrategy = useCallback(async (newIncome: number, updatedModules: Module[]) => {
-    // Recalculate tokens for all categories based on new income/strategy
     const weeklyIncome = newIncome / WEEKS_IN_YEAR;
     
     const finalModules = updatedModules.map(module => ({
@@ -214,11 +229,9 @@ export const useBudgetState = () => {
           newBaseValue = Math.round((weeklyIncome * (category.percentage || 0) / 100) * 100) / 100;
         }
         
-        // Preserve spent status if possible, otherwise generate fresh tokens
         const spentAmount = category.tokens.filter(t => t.spent).reduce((sum, t) => sum + t.value, 0);
         const freshTokens = generateTokens(category.id, newBaseValue, category.tokenValue || 10);
         
-        // Simple heuristic: mark tokens as spent until we reach the spentAmount
         let currentSpent = 0;
         const tokensWithSpent = freshTokens.map(t => {
           if (currentSpent < spentAmount) {
